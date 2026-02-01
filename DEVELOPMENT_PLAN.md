@@ -146,31 +146,147 @@ pip install PySide6 pyqtgraph numpy picosdk
 
 ---
 
-## Phase 2: Home Panel & Basic Acquisition
+## Phase 2: Home Panel & Basic Acquisition ✅ COMPLETE
 
 **Goal**: Create the main control interface with live waveform display.
 
-### 2.1 Main Window Framework
-- Implement tabbed interface using PySide6
-- Create Home Panel as the default/startup tab
-- Establish panel navigation
+**Status**: Fully implemented for PS3000a series. Raw waveform capture and event counting functional. Pulse analysis deferred to Phase 3.
 
-### 2.2 Waveform Display
-- Create 4-channel waveform display using PyQtGraph
-- Implement display update rate limiting (3 Hz max or acquisition rate, whichever is slower)
-- Show representative waveforms for verification (not every acquisition)
+### 2.1 Main Window Framework ✅
+**Files**: `positron/ui/main_window.py`
 
-### 2.3 Acquisition Controls
-- Start/Stop buttons for manual control
-- Preset time duration stop
-- Preset event count stop
-- Display current event count and elapsed time
+**Implemented**:
+- QMainWindow with QTabWidget for multiple panels
+- Home panel as default/first tab
+- Menu bar (File, Help) with About dialog
+- Window title displays connected scope information
+- Proper cleanup on close with acquisition check
+- Graceful scope disconnection
 
-### 2.4 Home Panel Save Features
-- Define what data the home panel saves (event data CSV, run metadata, etc.)
-- Implement save functionality (disabled during acquisition)
+### 2.2 Waveform Display ✅
+**Files**: `positron/ui/waveform_plot.py`
 
-**Deliverable**: Functional home panel showing live waveforms with acquisition control.
+**Implemented**:
+- PyQtGraph-based 4-channel overlay plot
+- Distinct colors for each channel (Red=A, Green=B, Blue=C, Orange=D)
+- Time axis in nanoseconds (relative to trigger at t=0)
+- Voltage axis in millivolts
+- Display update rate limiting (3 Hz configurable)
+- Disabled SI prefix auto-scaling for consistent axis labels
+- Auto-ranging enabled for dynamic scaling
+- Legend showing all 4 channels
+
+### 2.3 Acquisition Controls ✅
+**Files**: `positron/panels/home.py`, `positron/scope/acquisition.py`
+
+**Implemented - User Controls**:
+- **Start/Pause/Resume** toggle button (2-button simplified design)
+  - Start (green): Begin acquisition from stopped state
+  - Pause (orange): Halt acquisition, preserves event count
+  - Resume (blue): Continue acquisition, adds to previous count
+- **Restart** button: Resets counters to zero and starts fresh acquisition
+- Trigger reconfiguration available when paused
+
+**Implemented - Live Statistics Display**:
+- Event count (large, prominent, with comma separators)
+- Elapsed time (HH:MM:SS format, excludes paused time)
+- Acquisition rate (events/second, 5-second moving average, shows 0 when paused)
+
+**Implemented - Preset Auto-Stop Conditions**:
+- Time limit (checkbox + seconds input)
+- Event count limit (checkbox + count input)
+- Both independently configurable
+- Acquisition auto-pauses when either limit reached
+- Limits are per-run (reset on Restart)
+- Controls enabled when paused, disabled when running
+
+**Implemented - Acquisition Engine** (`positron/scope/acquisition.py`):
+- PS3000a rapid block mode for batch capture
+- Thread-based operation using QThread
+- Configurable batch size (default: 10 captures per batch)
+- Proper QThread lifecycle management (recreate on resume/restart)
+- Protocol-based design for future PS6000a support
+- Signals: `waveform_ready`, `batch_complete`, `acquisition_error`, `acquisition_finished`
+- Raw waveform data only - no pulse processing yet
+
+**Key API Calls Used**:
+- `ps3000aMemorySegments()` - Configure memory segments
+- `ps3000aSetNoOfCaptures()` - Set batch size
+- `ps3000aRunBlock()` - Start batch acquisition
+- `ps3000aIsReady()` - Poll for completion
+- `ps3000aSetDataBuffers()` - Register NumPy buffers for all channels/segments
+- `ps3000aGetValuesBulk()` - Retrieve captured waveforms
+- `adc2mV()` - Convert ADC counts to millivolts
+
+**Series Support**:
+- ✅ PS3000a: `PS3000aAcquisitionEngine` fully implemented
+- ⏳ PS6000a: `PS6000aAcquisitionEngine` stub ready for implementation
+
+### 2.4 Home Panel Save Features ⏳
+**Status**: Deferred to Phase 3
+
+Per user request, save functionality will be implemented after pulse analysis in Phase 3, as raw waveforms are not stored - only analyzed event data will be saved.
+
+### 2.5 Configuration Updates ✅
+**Files**: `positron/config.py`, `positron/app.py`
+
+**Added to Configuration**:
+- `default_batch_size`: Number of captures per batch (default: 10)
+- `max_event_count`: Safety limit (default: 1,000,000)
+- `time_limit_enabled`, `time_limit_seconds`: Time-based auto-stop
+- `event_limit_enabled`, `event_limit_count`: Count-based auto-stop
+- All settings persist to JSON configuration file
+
+**Added to Application State**:
+- Acquisition state signals: `acquisition_started`, `acquisition_paused`, `acquisition_resumed`, `acquisition_stopped`
+
+### 2.6 Application Integration ✅
+**Files**: `main.py`
+
+**Updated**:
+- Phase 1 initialization unchanged (connection, configuration, trigger setup)
+- Creates and displays main window after Phase 1 complete
+- Starts Qt event loop with `app.exec()`
+- Scope cleanup moved to window close event
+
+### Phase 2 Summary
+
+**Completed Components**:
+- ✅ Main window with tabbed interface
+- ✅ Home panel with acquisition controls
+- ✅ PS3000a rapid block mode acquisition engine
+- ✅ 4-channel waveform display (overlay, nanosecond timing)
+- ✅ Live statistics (count, time, rate)
+- ✅ Preset auto-stop conditions (time and count limits)
+- ✅ Thread-safe acquisition using QThread
+- ✅ Start/Pause/Resume/Restart controls
+- ✅ Trigger reconfiguration when paused
+
+**Tested Hardware**: PicoScope 3406D MSO (PS3000a series)
+
+**Performance Achieved**:
+- Batch acquisition working at hardware speeds
+- Waveform display updates at 3 Hz
+- Event counting functional (1 event = 1 trigger)
+- UI responsive during acquisition
+
+**Design Decisions**:
+- Raw waveform capture only (no pulse analysis yet)
+- Event = single triggered waveform capture
+- Acquisition engine doesn't store data, just emits signals
+- Home panel tracks event count
+- Simplified 2-button control scheme (Start/Pause + Restart)
+- Resume adds to existing count, Restart clears and starts fresh
+- Auto-stop pauses acquisition (can resume or restart)
+- Elapsed time excludes paused periods
+- Rate shows 0 when paused
+
+**Future Work** (PS6000a series):
+- Implement `PS6000aAcquisitionEngine` in `acquisition.py`
+- Test with PS6000a hardware
+- Note: UI and data structures already series-agnostic
+
+**Deliverable**: ✅ Functional home panel with live waveform display, acquisition controls, event counting, and auto-stop conditions. Application successfully captures triggered waveforms at hardware speeds and displays them in real-time. Ready for Phase 3 pulse analysis implementation.
 
 ---
 

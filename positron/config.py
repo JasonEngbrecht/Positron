@@ -168,6 +168,16 @@ class AppConfig:
     # Display settings
     waveform_display_rate: float = 3.0  # Hz, max update rate for waveform display
     
+    # Acquisition settings
+    default_batch_size: int = 10  # Number of captures per batch in rapid block mode
+    max_event_count: int = 1000000  # Maximum events before auto-stop (safety limit)
+    
+    # Preset stop conditions
+    time_limit_enabled: bool = False  # Enable automatic stop after time limit
+    time_limit_seconds: int = 300  # Time limit in seconds (default: 5 minutes)
+    event_limit_enabled: bool = False  # Enable automatic stop after event count
+    event_limit_count: int = 10000  # Event count limit (default: 10,000 events)
+    
     # File paths
     config_file: Path = field(default_factory=lambda: Path.home() / ".positron" / "config.json")
     default_save_directory: Path = field(default_factory=lambda: Path.home() / "Documents" / "Positron")
@@ -183,6 +193,12 @@ class AppConfig:
         config_dict = {
             "scope": self.scope.to_dict(),
             "waveform_display_rate": self.waveform_display_rate,
+            "default_batch_size": self.default_batch_size,
+            "max_event_count": self.max_event_count,
+            "time_limit_enabled": self.time_limit_enabled,
+            "time_limit_seconds": self.time_limit_seconds,
+            "event_limit_enabled": self.event_limit_enabled,
+            "event_limit_count": self.event_limit_count,
             "default_save_directory": str(self.default_save_directory),
         }
         
@@ -206,6 +222,12 @@ class AppConfig:
             config = cls()
             config.scope = ScopeConfig.from_dict(data.get("scope", {}))
             config.waveform_display_rate = data.get("waveform_display_rate", 3.0)
+            config.default_batch_size = data.get("default_batch_size", 10)
+            config.max_event_count = data.get("max_event_count", 1000000)
+            config.time_limit_enabled = data.get("time_limit_enabled", False)
+            config.time_limit_seconds = data.get("time_limit_seconds", 300)
+            config.event_limit_enabled = data.get("event_limit_enabled", False)
+            config.event_limit_count = data.get("event_limit_count", 10000)
             
             save_dir = data.get("default_save_directory")
             if save_dir:

@@ -31,6 +31,12 @@ class PositronApp(QObject):
     scope_connected_signal = Signal()
     scope_disconnected_signal = Signal()
     
+    # Acquisition state signals
+    acquisition_started = Signal()
+    acquisition_paused = Signal()
+    acquisition_resumed = Signal()
+    acquisition_stopped = Signal()
+    
     def __init__(self, config_path: Optional[Path] = None):
         """
         Initialize the Positron application.

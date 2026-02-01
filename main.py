@@ -20,6 +20,7 @@ from positron.scope.connection import detect_and_connect
 from positron.scope.configuration import create_configurator
 from positron.scope.trigger import create_trigger_configurator
 from positron.ui.trigger_dialog import show_trigger_config_dialog
+from positron.ui.main_window import MainWindow
 from picosdk.errors import DeviceNotFoundError
 
 
@@ -27,7 +28,7 @@ def main():
     """Main application entry point."""
     try:
         # Create Qt application
-        _ = create_application()  # Stored in QApplication.instance(), accessed by Qt internally
+        app = create_application()
         
         # Attempt to detect and connect to a PicoScope
         scope_info = None
@@ -224,13 +225,14 @@ def main():
         print(f"Connected to: PicoScope {scope_info.variant} (Serial: {scope_info.serial})")
         print(f"Configuration loaded from: {positron_app.config.config_file}")
         
-        # TODO: Phase 2 - Create and show main window here
-        # For now, we exit after showing the trigger configuration success message
+        # Phase 2: Create and show main window
+        print("\nLaunching main window...")
+        main_window = MainWindow(positron_app)
+        main_window.show()
         
-        # Clean up scope connection before exit
-        positron_app.disconnect_scope()
-        
-        return 0
+        # Start Qt event loop
+        print("Starting event loop...")
+        return app.exec()
         
     except Exception as e:
         print(f"Error starting application: {e}", file=sys.stderr)
