@@ -18,6 +18,8 @@ from PySide6.QtWidgets import QMessageBox
 from positron.app import PositronApp, create_application
 from positron.scope.connection import detect_and_connect
 from positron.scope.configuration import create_configurator
+from positron.scope.trigger import create_trigger_configurator
+from positron.ui.trigger_dialog import show_trigger_config_dialog
 from picosdk.errors import DeviceNotFoundError
 
 
@@ -108,9 +110,9 @@ def main():
             timebase_info = configurator.get_timebase_info()
             
             print("Scope configuration applied successfully:")
-            print(f"  Voltage range: 100 mV (all 4 channels)")
-            print(f"  Coupling: DC")
-            print(f"  Channels enabled: A, B, C, D")
+            print("  Voltage range: 100 mV (all 4 channels)")
+            print("  Coupling: DC")
+            print("  Channels enabled: A, B, C, D")
             print(f"  Sample rate: {sample_rate / 1e6:.2f} MS/s")
             print(f"  Timebase index: {timebase_info.timebase_index}")
             print(f"  Sample interval: {timebase_info.sample_interval_ns:.2f} ns")
@@ -150,12 +152,80 @@ def main():
             positron_app.disconnect_scope()
             return 1
         
+        # Phase 1.4: Trigger Configuration
+        try:
+            print("\nConfiguring trigger...")
+            
+            # Show trigger configuration dialog
+            trigger_config = show_trigger_config_dialog(positron_app.config.scope.trigger)
+            
+            if trigger_config is None:
+                # User cancelled trigger configuration
+                print("User cancelled trigger configuration. Exiting.")
+                positron_app.disconnect_scope()
+                return 0
+            
+            # Update config
+            positron_app.config.scope.trigger = trigger_config
+            
+            # Apply trigger to scope
+            trigger_configurator = create_trigger_configurator(scope_info)
+            trigger_info = trigger_configurator.apply_trigger(trigger_config)
+            
+            # Save configuration
+            positron_app.save_config()
+            
+            print("Trigger configuration applied successfully:")
+            print(f"  Threshold: {trigger_info.threshold_mv} mV")
+            print(f"  Direction: {trigger_info.direction}")
+            print(f"  Number of conditions: {trigger_info.num_conditions}")
+            for condition_str in trigger_info.conditions_summary:
+                print(f"    {condition_str}")
+            if trigger_info.auto_trigger_ms > 0:
+                print(f"  Auto-trigger: {trigger_info.auto_trigger_ms} ms")
+            else:
+                print("  Auto-trigger: Disabled")
+            
+            # Show trigger configuration success message
+            trigger_msg = QMessageBox()
+            trigger_msg.setIcon(QMessageBox.Information)
+            trigger_msg.setWindowTitle("Positron - Trigger Configured")
+            trigger_msg.setText("Trigger configured successfully!")
+            
+            conditions_text = "\n".join(trigger_info.conditions_summary)
+            auto_trigger_text = f"{trigger_info.auto_trigger_ms} ms" if trigger_info.auto_trigger_ms > 0 else "Disabled"
+            
+            trigger_msg.setInformativeText(
+                f"Threshold: {trigger_info.threshold_mv} mV\n"
+                f"Direction: {trigger_info.direction}\n"
+                f"Conditions ({trigger_info.num_conditions}):\n"
+                f"{conditions_text}\n"
+                f"Auto-trigger: {auto_trigger_text}\n\n"
+                "Phase 1.4 complete: Trigger configuration."
+            )
+            trigger_msg.setStandardButtons(QMessageBox.Ok)
+            trigger_msg.exec()
+            
+        except Exception as e:
+            # Trigger configuration failed
+            error_msg = QMessageBox()
+            error_msg.setIcon(QMessageBox.Critical)
+            error_msg.setWindowTitle("Trigger Configuration Error")
+            error_msg.setText("Failed to configure the trigger.")
+            error_msg.setInformativeText(str(e))
+            error_msg.setStandardButtons(QMessageBox.Ok)
+            error_msg.exec()
+            
+            # Clean up and exit
+            positron_app.disconnect_scope()
+            return 1
+        
         print("Positron application initialized successfully.")
         print(f"Connected to: PicoScope {scope_info.variant} (Serial: {scope_info.serial})")
         print(f"Configuration loaded from: {positron_app.config.config_file}")
         
         # TODO: Phase 2 - Create and show main window here
-        # For now, we exit after showing the connection success message
+        # For now, we exit after showing the trigger configuration success message
         
         # Clean up scope connection before exit
         positron_app.disconnect_scope()

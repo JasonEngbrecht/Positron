@@ -3,9 +3,110 @@ Configuration management for scope settings and application defaults.
 """
 
 from dataclasses import dataclass, field
-from typing import Optional, Dict, Any
+from typing import Optional, Dict, Any, List
 import json
 from pathlib import Path
+
+
+@dataclass
+class TriggerCondition:
+    """
+    A single trigger condition with AND logic between selected channels.
+    
+    Example: enabled=True, channels=['A', 'B'] means "Channel A AND Channel B"
+    """
+    enabled: bool = False
+    channels: List[str] = field(default_factory=list)  # List of channel names: 'A', 'B', 'C', 'D'
+    
+    def to_dict(self) -> Dict[str, Any]:
+        """Convert to dictionary for serialization."""
+        return {
+            "enabled": self.enabled,
+            "channels": self.channels.copy()
+        }
+    
+    @classmethod
+    def from_dict(cls, data: Dict[str, Any]) -> "TriggerCondition":
+        """Create from dictionary."""
+        return cls(
+            enabled=data.get("enabled", False),
+            channels=data.get("channels", [])
+        )
+    
+    def has_channels(self) -> bool:
+        """Check if this condition has any channels selected."""
+        return len(self.channels) > 0
+    
+    def is_valid(self) -> bool:
+        """Check if this condition is valid (enabled and has channels)."""
+        return self.enabled and self.has_channels()
+
+
+@dataclass
+class TriggerConfig:
+    """
+    Trigger configuration with up to 4 conditions using OR logic.
+    
+    Multiple enabled conditions use OR logic: Condition1 OR Condition2 OR ...
+    Within each condition, channels use AND logic.
+    
+    Hardware settings (hardcoded):
+    - Threshold: -5 mV
+    - Direction: Falling edge
+    """
+    # Four trigger conditions
+    condition_1: TriggerCondition = field(default_factory=TriggerCondition)
+    condition_2: TriggerCondition = field(default_factory=TriggerCondition)
+    condition_3: TriggerCondition = field(default_factory=TriggerCondition)
+    condition_4: TriggerCondition = field(default_factory=TriggerCondition)
+    
+    # Auto-trigger timeout setting
+    auto_trigger_enabled: bool = False  # If False, scope never auto-triggers
+    
+    def to_dict(self) -> Dict[str, Any]:
+        """Convert to dictionary for serialization."""
+        return {
+            "condition_1": self.condition_1.to_dict(),
+            "condition_2": self.condition_2.to_dict(),
+            "condition_3": self.condition_3.to_dict(),
+            "condition_4": self.condition_4.to_dict(),
+            "auto_trigger_enabled": self.auto_trigger_enabled,
+        }
+    
+    @classmethod
+    def from_dict(cls, data: Dict[str, Any]) -> "TriggerConfig":
+        """Create from dictionary."""
+        return cls(
+            condition_1=TriggerCondition.from_dict(data.get("condition_1", {})),
+            condition_2=TriggerCondition.from_dict(data.get("condition_2", {})),
+            condition_3=TriggerCondition.from_dict(data.get("condition_3", {})),
+            condition_4=TriggerCondition.from_dict(data.get("condition_4", {})),
+            auto_trigger_enabled=data.get("auto_trigger_enabled", False),
+        )
+    
+    def get_all_conditions(self) -> List[TriggerCondition]:
+        """Get all conditions as a list."""
+        return [self.condition_1, self.condition_2, self.condition_3, self.condition_4]
+    
+    def get_valid_conditions(self) -> List[TriggerCondition]:
+        """Get only valid (enabled with channels) conditions."""
+        return [cond for cond in self.get_all_conditions() if cond.is_valid()]
+    
+    def has_any_valid_condition(self) -> bool:
+        """Check if at least one valid condition exists."""
+        return len(self.get_valid_conditions()) > 0
+    
+    @classmethod
+    def create_default(cls) -> "TriggerConfig":
+        """
+        Create default trigger configuration for PALS experiments.
+        
+        Default: Condition 1 with Channel A only (single start detector)
+        """
+        config = cls()
+        config.condition_1.enabled = True
+        config.condition_1.channels = ['A']
+        return config
 
 
 @dataclass
@@ -24,6 +125,9 @@ class ScopeConfig:
     pre_trigger_samples: int = 125  # Pre-trigger sample count (calculated from sample rate and 1 µs)
     sample_rate: Optional[float] = None  # Achieved sample rate in Hz (e.g., 125000000.0 for 125 MS/s)
     
+    # Trigger configuration
+    trigger: TriggerConfig = field(default_factory=TriggerConfig.create_default)
+    
     def to_dict(self) -> Dict[str, Any]:
         """Convert configuration to dictionary for serialization."""
         return {
@@ -33,6 +137,7 @@ class ScopeConfig:
             "waveform_length": self.waveform_length,
             "pre_trigger_samples": self.pre_trigger_samples,
             "sample_rate": self.sample_rate,
+            "trigger": self.trigger.to_dict(),
         }
     
     @classmethod
@@ -44,7 +149,13 @@ class ScopeConfig:
             "waveform_length", "pre_trigger_samples", "sample_rate"
         }
         filtered_data = {k: v for k, v in data.items() if k in valid_fields}
-        return cls(**filtered_data)
+        
+        # Handle trigger config separately
+        scope_config = cls(**filtered_data)
+        if "trigger" in data:
+            scope_config.trigger = TriggerConfig.from_dict(data["trigger"])
+        
+        return scope_config
 
 
 @dataclass

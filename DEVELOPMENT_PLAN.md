@@ -49,56 +49,100 @@ pip install PySide6 pyqtgraph numpy picosdk
 
 ---
 
-## Phase 1: Foundation & Scope Communication
+## Phase 1: Foundation & Scope Communication ✅ COMPLETE
 
 **Goal**: Establish basic application structure and reliable oscilloscope communication.
 
-### 1.1 Project Structure
-- Set up Python project with proper package structure
-- Create main application entry point
-- Establish configuration management (scope settings, defaults)
+**Status**: Fully implemented for PS3000a series. PS6000a stubs in place for future implementation.
 
-### 1.2 Scope Connection
-- Implement automatic scope discovery and connection for 3000a and 6000a series
-- Detect connected scope automatically (tries 3000a first, then 6000a)
-- Handle power state changes automatically (status codes 282, 286)
-- Retrieve and display device information (variant, serial number, max ADC)
-- Handle connection errors gracefully with retry/cancel dialogs
-- Implement scope disconnection/cleanup
-- Save detected scope series to configuration
+### 1.1 Project Structure ✅
+- Python package structure with proper module organization
+- Main application entry point (`main.py`)
+- Configuration management system with JSON persistence
+- Application state manager (`positron/app.py`)
 
-### 1.3 Basic Scope Configuration
-- Apply hardcoded optimal settings for pulse detection experiments
-- Configure all 4 channels with 100mV voltage range and DC coupling
-- Set maximum sample rate (timebase 0 or fastest available)
-- Calculate sample counts based on time windows (1 µs pre-trigger, 2 µs post-trigger)
+### 1.2 Scope Connection ✅
+**Files**: `positron/scope/connection.py`
 
-**Phase 1.3 Status**: ✅ Complete
-- `positron/scope/configuration.py` - Configuration module with PS3000a implementation
-- `ScopeConfigurator` protocol for extensibility
-- `PS3000aConfigurator` class with hardcoded optimal settings:
-  - Hardware constants: 100mV range, 4 channels enabled, DC coupling
-  - Time-based sampling: 1µs pre-trigger, 2µs post-trigger (3µs total)
-  - Automatic sample count calculation based on achieved sample rate
-- `PS6000aConfigurator` stub for future implementation
-- Factory function `create_configurator()` for series-specific instantiation
-- Updated `ScopeInfo` dataclass to include `api_module` reference
-- Simplified `ScopeConfig` to store only achieved values (not configurable parameters)
-- Integration with `main.py` startup flow with detailed status display
-- Tested successfully with PicoScope 3406D MSO (250 MS/s achieved)
+**Implemented**:
+- Automatic scope discovery (tries PS3000a first, then PS6000a)
+- Power state handling (status codes 282, 286)
+- Device information retrieval (variant, serial, max ADC)
+- Connection error handling with retry/cancel dialogs
+- Proper cleanup and disconnection
+- Configuration persistence
 
-### 1.4 Trigger Configuration
-- Implement advanced trigger setup using Picoscope's AND/OR logic
-- Create UI for selecting trigger channels and logic combinations
-- Store/recall trigger configurations
+**Series Support**:
+- ✅ PS3000a: Fully implemented and tested (PicoScope 3406D MSO)
+- ⏳ PS6000a: Framework in place, full implementation pending
 
-**Deliverable**: Application that connects to a Picoscope and configures basic acquisition parameters.
+### 1.3 Basic Scope Configuration ✅
+**Files**: `positron/scope/configuration.py`
 
-**Phase 1 Status Summary**:
-- ✅ Phase 1.1: Project Structure - Complete
-- ✅ Phase 1.2: Scope Connection - Complete  
-- ✅ Phase 1.3: Basic Scope Configuration - Complete
-- ⏳ Phase 1.4: Trigger Configuration - Pending
+**Hardcoded Settings** (optimized for pulse detection):
+- Voltage range: 100 mV on all 4 channels
+- Coupling: DC
+- Channels: All 4 enabled (A, B, C, D)
+- Sample rate: Maximum available (250 MS/s on PS3406D)
+- Capture window: 1 µs pre-trigger, 2 µs post-trigger (3 µs total)
+
+**Implementation**:
+- Protocol-based design (`ScopeConfigurator`)
+- Automatic timebase calculation for time-based sampling
+- Sample count calculation based on achieved sample rate
+- Factory function for series-specific instantiation
+
+**Series Support**:
+- ✅ PS3000a: `PS3000aConfigurator` fully implemented
+- ⏳ PS6000a: `PS6000aConfigurator` stub ready for implementation
+
+### 1.4 Trigger Configuration ✅
+**Files**: `positron/scope/trigger.py`, `positron/ui/trigger_dialog.py`, `positron/config.py`
+
+**Hardcoded Settings** (optimized for negative pulses):
+- Threshold: -5 mV
+- Direction: Falling edge
+- Hysteresis: 10 ADC counts
+- Auto-trigger: Disabled or 60s maximum
+
+**User-Configurable**:
+- Up to 4 trigger conditions (OR logic between conditions)
+- Channel selection per condition: A, B, C, D (AND logic within condition)
+- Auto-trigger timeout on/off
+
+**Implementation**:
+- Protocol-based design (`TriggerConfigurator`)
+- Advanced AND/OR logic using multiple condition structures
+- PySide6 dialog with intuitive UI for configuration
+- Configuration persistence and defaults
+- Complete PS3000a API integration:
+  - `ps3000aSetTriggerChannelProperties` for threshold levels
+  - `ps3000aSetTriggerChannelConditionsV2` for AND/OR logic
+  - `ps3000aSetTriggerChannelDirections` for edge direction
+
+**Series Support**:
+- ✅ PS3000a: `PS3000aTriggerConfigurator` fully implemented
+- ⏳ PS6000a: `PS6000aTriggerConfigurator` stub ready for implementation
+
+### Phase 1 Summary
+
+**Completed Components**:
+- ✅ Application framework and configuration system
+- ✅ PS3000a scope detection and connection
+- ✅ PS3000a channel configuration (100mV, DC, 4 channels, max rate)
+- ✅ PS3000a trigger configuration with AND/OR logic
+- ✅ User interface for trigger setup
+- ✅ Configuration persistence to disk
+
+**Tested Hardware**: PicoScope 3406D MSO (PS3000a series)
+
+**Future Work** (PS6000a series):
+- Implement `PS6000aConfigurator` in `configuration.py`
+- Implement `PS6000aTriggerConfigurator` in `trigger.py`
+- Test with PS6000a hardware
+- Note: Data structures and UI are already series-agnostic
+
+**Deliverable**: ✅ Application successfully connects to PS3000a scopes and configures all acquisition parameters (channels, sample rate, trigger logic). Ready for Phase 2 acquisition implementation.
 
 ---
 

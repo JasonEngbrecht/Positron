@@ -39,7 +39,15 @@ Currently implementing Phase 1: Foundation & Scope Communication.
   - Maximum sample rate (250 MS/s achieved on PS3406D MSO)
   - Time-based capture windows (1 µs pre-trigger, 2 µs post-trigger)
   - Automatic sample count calculation
-- ⏳ Phase 1.4: Trigger Configuration - Pending
+- ✅ Phase 1.4: Trigger Configuration - Complete
+  - Advanced trigger configuration with AND/OR logic
+  - Up to 4 trigger conditions (OR logic between conditions)
+  - Each condition supports multiple channels (AND logic within condition)
+  - Hardcoded threshold (-5 mV) and direction (falling edge)
+  - Configurable auto-trigger timeout
+  - Persistent trigger configuration
+  - User-friendly configuration dialog
+- ⏳ Phase 2: Home Panel & Basic Acquisition - Pending
 
 ## Development
 
