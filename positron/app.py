@@ -19,6 +19,7 @@ from PySide6.QtCore import QObject, Signal
 
 from positron.config import AppConfig
 from positron.scope.connection import ScopeInfo
+from positron.processing.events import EventStorage, get_event_storage
 
 
 class PositronApp(QObject):
@@ -53,6 +54,9 @@ class PositronApp(QObject):
         self._scope_connected = False
         self._scope_handle = None
         self._scope_info: Optional[ScopeInfo] = None
+        
+        # Initialize global event storage
+        self._event_storage = get_event_storage(max_capacity=self.config.max_events)
     
     @property
     def scope_connected(self) -> bool:
@@ -63,6 +67,11 @@ class PositronApp(QObject):
     def scope_info(self) -> Optional[ScopeInfo]:
         """Get information about the connected scope."""
         return self._scope_info
+    
+    @property
+    def event_storage(self) -> EventStorage:
+        """Get the global event storage instance."""
+        return self._event_storage
     
     def connect_scope(self, scope_info: ScopeInfo) -> None:
         """

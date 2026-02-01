@@ -292,6 +292,9 @@ class HomePanel(QWidget):
     
     def _on_restart_clicked(self) -> None:
         """Handle restart button click - reset counters and start fresh."""
+        # Clear event storage
+        self.app.event_storage.clear()
+        
         # Clear statistics
         self._total_events = 0
         now = time.time()
@@ -463,12 +466,14 @@ class HomePanel(QWidget):
         # Create engine
         self.acquisition_engine = create_acquisition_engine(
             scope_info=scope_info,
+            event_storage=self.app.event_storage,
             batch_size=config.default_batch_size,
             sample_count=config.scope.waveform_length,
             pre_trigger_samples=config.scope.pre_trigger_samples,
             sample_interval_ns=sample_interval_ns,
             voltage_range_code=7,  # 100 mV
-            max_adc=scope_info.max_adc
+            max_adc=scope_info.max_adc,
+            cfd_fraction=config.cfd_fraction
         )
         
         # Connect signals
@@ -476,6 +481,7 @@ class HomePanel(QWidget):
         self.acquisition_engine.batch_complete.connect(self._on_batch_complete)
         self.acquisition_engine.acquisition_error.connect(self._on_acquisition_error)
         self.acquisition_engine.acquisition_finished.connect(self._on_acquisition_finished)
+        self.acquisition_engine.storage_warning.connect(self._on_storage_warning)
     
     def _on_waveform_ready(self, batch: WaveformBatch) -> None:
         """Handle new waveform data."""
@@ -507,10 +513,20 @@ class HomePanel(QWidget):
         # This is called when the thread actually stops
         pass
     
+    def _on_storage_warning(self, warning_msg: str) -> None:
+        """Handle storage warning from acquisition engine."""
+        print(f"Storage warning: {warning_msg}")
+        # If storage is full, stop acquisition
+        if "full" in warning_msg.lower():
+            self._stop_acquisition()
+    
     def _check_stop_conditions(self) -> None:
         """Check if any auto-stop conditions are met."""
         if self._state != "running":
             return
+        
+        # Get current event count from storage
+        event_count = self.app.event_storage.get_count()
         
         # Check time limit
         if self.time_limit_check.isChecked():
@@ -524,15 +540,16 @@ class HomePanel(QWidget):
         # Check event count limit
         if self.event_limit_check.isChecked():
             limit = self.event_limit_spin.value()
-            if self._total_events >= limit:
-                print(f"Event count limit reached: {self._total_events} >= {limit}")
+            if event_count >= limit:
+                print(f"Event count limit reached: {event_count} >= {limit}")
                 self._stop_acquisition()
                 return
     
     def _update_statistics_display(self) -> None:
         """Update the statistics display."""
-        # Event count
-        self.event_count_label.setText(f"{self._total_events:,}")
+        # Event count from storage (more accurate than batch counting)
+        event_count = self.app.event_storage.get_count()
+        self.event_count_label.setText(f"{event_count:,}")
         
         # Elapsed time
         elapsed = self._get_elapsed_time()
@@ -541,7 +558,7 @@ class HomePanel(QWidget):
         seconds = int(elapsed % 60)
         self.elapsed_time_label.setText(f"{hours:02d}:{minutes:02d}:{seconds:02d}")
         
-        # Acquisition rate
+        # Acquisition rate (calculated from recent batches)
         rate = self._calculate_rate()
         self.rate_label.setText(f"{rate:.1f} events/s")
     

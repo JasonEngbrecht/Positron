@@ -7,7 +7,7 @@ designed for event-mode data collection at rates up to 10,000 events/second.
 
 import ctypes
 import time
-from typing import Optional, Dict, Protocol, Any
+from typing import Optional, Dict, Protocol, Any, List
 from dataclasses import dataclass
 
 import numpy as np
@@ -15,6 +15,8 @@ from PySide6.QtCore import QThread, Signal, QMutex, QMutexLocker
 
 from picosdk.functions import assert_pico_ok, adc2mV
 from positron.scope.connection import ScopeInfo
+from positron.processing.pulse import analyze_event, EventData
+from positron.processing.events import EventStorage
 
 
 @dataclass
@@ -59,34 +61,42 @@ class PS3000aAcquisitionEngine(QThread):
     batch_complete = Signal(int)  # Emitted after each batch (with capture count)
     acquisition_error = Signal(str)  # Emitted on error
     acquisition_finished = Signal()  # Emitted when acquisition stops
+    storage_warning = Signal(str)  # Emitted when storage approaching limit
     
     def __init__(
         self,
         scope_info: ScopeInfo,
+        event_storage: EventStorage,
         batch_size: int = 10,
         sample_count: int = 375,
         pre_trigger_samples: int = 125,
         sample_interval_ns: float = 8.0,
         voltage_range_code: int = 7,  # 100 mV range
-        max_adc: int = 32512
+        max_adc: int = 32512,
+        cfd_fraction: float = 0.5
     ):
         """
         Initialize the acquisition engine.
         
         Args:
             scope_info: Information about the connected scope
+            event_storage: Global event storage for processed events
             batch_size: Number of captures per batch (rapid block segments)
             sample_count: Total samples per capture
             pre_trigger_samples: Number of pre-trigger samples
             sample_interval_ns: Sample interval in nanoseconds
             voltage_range_code: PicoScope voltage range code (7 = 100 mV)
             max_adc: Maximum ADC count for voltage conversion
+            cfd_fraction: Constant fraction for CFD timing (0-1)
         """
         super().__init__()
         
         self.scope_info = scope_info
         self.ps = scope_info.api_module
         self.handle = scope_info.handle
+        
+        # Event storage
+        self.event_storage = event_storage
         
         # Acquisition parameters
         self.batch_size = batch_size
@@ -96,6 +106,7 @@ class PS3000aAcquisitionEngine(QThread):
         self.sample_interval_ns = sample_interval_ns
         self.voltage_range_code = voltage_range_code
         self.max_adc = max_adc
+        self.cfd_fraction = cfd_fraction
         
         # State management
         self._mutex = QMutex()
@@ -118,6 +129,7 @@ class PS3000aAcquisitionEngine(QThread):
         
         # Statistics
         self.total_captures = 0
+        self._diagnostic_counter = 0  # For printing every Nth event
     
     def _calculate_timebase(self) -> int:
         """
@@ -295,21 +307,85 @@ class PS3000aAcquisitionEngine(QThread):
             )
             assert_pico_ok(status["GetValuesBulk"])
             
-            # Convert ADC values to millivolts for display
-            # Use the first segment for display (others are counted but not shown)
-            waveforms_mv = {}
+            # Create time array in nanoseconds (relative to trigger)
+            time_ns = np.arange(self.sample_count) * self.sample_interval_ns
+            time_ns -= self.pre_trigger_samples * self.sample_interval_ns  # Trigger at t=0
+            
+            # Process each segment in the batch
             max_adc_ctypes = ctypes.c_int16(self.max_adc)
+            events_to_store: List[EventData] = []
+            
+            for segment_idx in range(self.batch_size):
+                # Convert ADC to mV for this segment
+                segment_waveforms = {}
+                for channel_name, channel_code in self._channels.items():
+                    buffer_max, _ = self._buffers[channel_name][segment_idx]
+                    waveform_mv = adc2mV(
+                        buffer_max,
+                        self.voltage_range_code,
+                        max_adc_ctypes
+                    )
+                    # Ensure it's a numpy array (adc2mV sometimes returns list)
+                    segment_waveforms[channel_name] = np.asarray(waveform_mv)
+                
+                # Analyze this event
+                event_id = self.event_storage.get_next_event_id()
+                timestamp = time.time()
+                
+                event_data = analyze_event(
+                    time_ns=time_ns,
+                    waveforms={},  # Not used by analyze_event
+                    segment_waveforms=segment_waveforms,
+                    event_id=event_id,
+                    timestamp=timestamp,
+                    pre_trigger_samples=self.pre_trigger_samples,
+                    sample_interval_ns=self.sample_interval_ns,
+                    cfd_fraction=self.cfd_fraction
+                )
+                
+                events_to_store.append(event_data)
+            
+            # Store all events from this batch
+            num_added = self.event_storage.add_events(events_to_store)
+            
+            # Diagnostic: Print every 100th event
+            for event in events_to_store:
+                self._diagnostic_counter += 1
+                if self._diagnostic_counter % 100 == 0:
+                    print(f"\n=== Event #{event.event_id} (every 100th event diagnostic) ===")
+                    print(f"Timestamp: {event.timestamp:.3f} s")
+                    for ch_name in ['A', 'B', 'C', 'D']:
+                        pulse = event.channels[ch_name]
+                        status = "PULSE" if pulse.has_pulse else "no pulse"
+                        print(f"  Ch{ch_name}: timing={pulse.timing_ns:7.2f} ns, "
+                              f"energy={pulse.energy:8.1f} mV·ns, "
+                              f"peak={pulse.peak_mv:6.2f} mV [{status}]")
+            
+            # Check storage capacity
+            if num_added < len(events_to_store):
+                self.storage_warning.emit(
+                    f"Event storage full! Only {num_added} of {len(events_to_store)} events stored."
+                )
+                return False  # Stop acquisition if storage is full
+            
+            # Warn if approaching capacity (>90%)
+            fill_pct = self.event_storage.get_fill_percentage()
+            if fill_pct > 90.0 and fill_pct < 95.0:
+                self.storage_warning.emit(
+                    f"Event storage {fill_pct:.1f}% full ({self.event_storage.get_count():,} events)"
+                )
+            
+            # Prepare display waveform (first segment)
+            waveforms_mv = {}
             for channel_name, channel_code in self._channels.items():
                 buffer_max, _ = self._buffers[channel_name][0]  # First segment
-                waveforms_mv[channel_name] = adc2mV(
+                waveform_mv = adc2mV(
                     buffer_max,
                     self.voltage_range_code,
                     max_adc_ctypes
                 )
-            
-            # Create time array in nanoseconds (relative to trigger)
-            time_ns = np.arange(self.sample_count) * self.sample_interval_ns
-            time_ns -= self.pre_trigger_samples * self.sample_interval_ns  # Trigger at t=0
+                # Ensure it's a numpy array (adc2mV sometimes returns list)
+                waveforms_mv[channel_name] = np.asarray(waveform_mv)
             
             # Update statistics
             self.total_captures += self.batch_size
@@ -322,7 +398,7 @@ class PS3000aAcquisitionEngine(QThread):
                 segment_index=0
             )
             self.waveform_ready.emit(batch)
-            self.batch_complete.emit(self.batch_size)
+            self.batch_complete.emit(num_added)  # Emit actual number of events stored
             
             return True
             
@@ -350,6 +426,7 @@ class PS3000aAcquisitionEngine(QThread):
             self._running = True
             self._stop_requested = False
             self.total_captures = 0
+            self._diagnostic_counter = 0  # Reset diagnostic counter
         
         # Start the thread (calls run())
         super().start()
@@ -377,11 +454,13 @@ class PS6000aAcquisitionEngine(QThread):
     batch_complete = Signal(int)
     acquisition_error = Signal(str)
     acquisition_finished = Signal()
+    storage_warning = Signal(str)
     
-    def __init__(self, scope_info: ScopeInfo, **kwargs):
+    def __init__(self, scope_info: ScopeInfo, event_storage: EventStorage, **kwargs):
         """Initialize stub engine."""
         super().__init__()
         self.scope_info = scope_info
+        self.event_storage = event_storage
         self._running = False
     
     def run(self) -> None:
@@ -405,24 +484,28 @@ class PS6000aAcquisitionEngine(QThread):
 
 def create_acquisition_engine(
     scope_info: ScopeInfo,
+    event_storage: EventStorage,
     batch_size: int,
     sample_count: int,
     pre_trigger_samples: int,
     sample_interval_ns: float,
     voltage_range_code: int = 7,
-    max_adc: Optional[int] = None
+    max_adc: Optional[int] = None,
+    cfd_fraction: float = 0.5
 ) -> AcquisitionEngine:
     """
     Factory function to create the appropriate acquisition engine for the scope series.
     
     Args:
         scope_info: Information about the connected scope
+        event_storage: Global event storage for processed events
         batch_size: Number of captures per batch
         sample_count: Total samples per capture
         pre_trigger_samples: Number of pre-trigger samples
         sample_interval_ns: Sample interval in nanoseconds
         voltage_range_code: Voltage range code (default: 7 = 100 mV)
         max_adc: Maximum ADC count (uses scope_info.max_adc if None)
+        cfd_fraction: Constant fraction for CFD timing (default: 0.5)
     
     Returns:
         Appropriate acquisition engine instance
@@ -436,22 +519,26 @@ def create_acquisition_engine(
     if scope_info.series == "3000a":
         return PS3000aAcquisitionEngine(
             scope_info=scope_info,
+            event_storage=event_storage,
             batch_size=batch_size,
             sample_count=sample_count,
             pre_trigger_samples=pre_trigger_samples,
             sample_interval_ns=sample_interval_ns,
             voltage_range_code=voltage_range_code,
-            max_adc=max_adc
+            max_adc=max_adc,
+            cfd_fraction=cfd_fraction
         )
     elif scope_info.series == "6000a":
         return PS6000aAcquisitionEngine(
             scope_info=scope_info,
+            event_storage=event_storage,
             batch_size=batch_size,
             sample_count=sample_count,
             pre_trigger_samples=pre_trigger_samples,
             sample_interval_ns=sample_interval_ns,
             voltage_range_code=voltage_range_code,
-            max_adc=max_adc
+            max_adc=max_adc,
+            cfd_fraction=cfd_fraction
         )
     else:
         raise ValueError(f"Unsupported scope series: {scope_info.series}")

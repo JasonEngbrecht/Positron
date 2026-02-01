@@ -172,6 +172,12 @@ class AppConfig:
     default_batch_size: int = 10  # Number of captures per batch in rapid block mode
     max_event_count: int = 1000000  # Maximum events before auto-stop (safety limit)
     
+    # Phase 3: Processing parameters
+    cfd_fraction: float = 0.5  # Constant fraction for timing (0-1)
+    max_events: int = 1_000_000  # Hard limit on event storage (~700 MB memory)
+    # Note: Can be increased if needed, but memory usage is ~750 bytes/event
+    # Future optimization to NumPy arrays could enable 10M+ events in <1 GB
+    
     # Preset stop conditions
     time_limit_enabled: bool = False  # Enable automatic stop after time limit
     time_limit_seconds: int = 300  # Time limit in seconds (default: 5 minutes)
@@ -200,6 +206,8 @@ class AppConfig:
             "event_limit_enabled": self.event_limit_enabled,
             "event_limit_count": self.event_limit_count,
             "default_save_directory": str(self.default_save_directory),
+            "cfd_fraction": self.cfd_fraction,
+            "max_events": self.max_events,
         }
         
         with open(path, "w") as f:
@@ -228,6 +236,8 @@ class AppConfig:
             config.time_limit_seconds = data.get("time_limit_seconds", 300)
             config.event_limit_enabled = data.get("event_limit_enabled", False)
             config.event_limit_count = data.get("event_limit_count", 10000)
+            config.cfd_fraction = data.get("cfd_fraction", 0.5)
+            config.max_events = data.get("max_events", 10_000_000)
             
             save_dir = data.get("default_save_directory")
             if save_dir:
