@@ -17,20 +17,12 @@ class ScopeConfig:
     last_variant: Optional[str] = None  # Last connected variant (e.g., "3406D MSO")
     last_serial: Optional[str] = None  # Last connected serial number
     
-    # Channel settings (applied to all 4 channels)
-    voltage_range: float = 2.0  # Volts, preset same for all channels
-    enabled_channels: list = field(default_factory=lambda: [True, True, True, True])  # 4 channels
-    
-    # Acquisition settings
-    waveform_length: int = 1500  # Number of samples (1000-2000, configurable)
-    pre_trigger_samples: int = 500  # Pre-trigger sample capture
-    sample_rate: Optional[float] = None  # Will be set to maximum based on scope model
-    
-    # Trigger settings
-    trigger_enabled: bool = True
-    trigger_channels: list = field(default_factory=list)  # List of channel indices
-    trigger_logic: str = "OR"  # "AND" or "OR"
-    trigger_threshold: float = 0.5  # Volts
+    # Achieved acquisition settings (read-only, set by configurator)
+    # These are stored for reference but not used to configure the scope
+    # Hardware settings are hardcoded: 100mV range, 4 channels enabled, DC coupling
+    waveform_length: int = 375  # Total number of samples (calculated from sample rate and 3 µs)
+    pre_trigger_samples: int = 125  # Pre-trigger sample count (calculated from sample rate and 1 µs)
+    sample_rate: Optional[float] = None  # Achieved sample rate in Hz (e.g., 125000000.0 for 125 MS/s)
     
     def to_dict(self) -> Dict[str, Any]:
         """Convert configuration to dictionary for serialization."""
@@ -38,21 +30,21 @@ class ScopeConfig:
             "scope_series": self.scope_series,
             "last_variant": self.last_variant,
             "last_serial": self.last_serial,
-            "voltage_range": self.voltage_range,
-            "enabled_channels": self.enabled_channels,
             "waveform_length": self.waveform_length,
             "pre_trigger_samples": self.pre_trigger_samples,
             "sample_rate": self.sample_rate,
-            "trigger_enabled": self.trigger_enabled,
-            "trigger_channels": self.trigger_channels,
-            "trigger_logic": self.trigger_logic,
-            "trigger_threshold": self.trigger_threshold,
         }
     
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> "ScopeConfig":
         """Create configuration from dictionary."""
-        return cls(**data)
+        # Filter out old/unknown fields for backward compatibility
+        valid_fields = {
+            "scope_series", "last_variant", "last_serial",
+            "waveform_length", "pre_trigger_samples", "sample_rate"
+        }
+        filtered_data = {k: v for k, v in data.items() if k in valid_fields}
+        return cls(**filtered_data)
 
 
 @dataclass
@@ -118,9 +110,7 @@ class AppConfig:
         """Get default configuration values."""
         return {
             "scope_series": None,
-            "voltage_range": 2.0,
-            "waveform_length": 1500,
-            "pre_trigger_samples": 500,
-            "trigger_logic": "OR",
-            "trigger_threshold": 0.5,
+            "waveform_length": 375,
+            "pre_trigger_samples": 125,
+            "sample_rate": None,
         }

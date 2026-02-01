@@ -33,7 +33,12 @@ Currently implementing Phase 1: Foundation & Scope Communication.
   - Device information retrieval
   - Power state handling
   - Configuration persistence
-- ⏳ Phase 1.3: Basic Scope Configuration - Pending
+- ✅ Phase 1.3: Basic Scope Configuration - Complete
+  - Hardcoded configuration optimized for pulse detection
+  - 100 mV voltage range on all 4 channels
+  - Maximum sample rate (250 MS/s achieved on PS3406D MSO)
+  - Time-based capture windows (1 µs pre-trigger, 2 µs post-trigger)
+  - Automatic sample count calculation
 - ⏳ Phase 1.4: Trigger Configuration - Pending
 
 ## Development

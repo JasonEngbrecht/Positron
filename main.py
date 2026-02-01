@@ -17,6 +17,7 @@ from PySide6.QtWidgets import QMessageBox
 
 from positron.app import PositronApp, create_application
 from positron.scope.connection import detect_and_connect
+from positron.scope.configuration import create_configurator
 from picosdk.errors import DeviceNotFoundError
 
 
@@ -87,6 +88,67 @@ def main():
         
         # Register the scope connection
         positron_app.connect_scope(scope_info)
+        
+        # Phase 1.3: Apply scope configuration
+        try:
+            print("\nApplying scope configuration...")
+            configurator = create_configurator(scope_info)
+            configurator.apply_configuration()
+            
+            # Store achieved values in config
+            sample_rate = configurator.get_actual_sample_rate()
+            total_samples, pre_samples = configurator.get_sample_counts()
+            
+            positron_app.config.scope.sample_rate = sample_rate
+            positron_app.config.scope.waveform_length = total_samples
+            positron_app.config.scope.pre_trigger_samples = pre_samples
+            positron_app.save_config()
+            
+            # Get detailed timebase info for display
+            timebase_info = configurator.get_timebase_info()
+            
+            print("Scope configuration applied successfully:")
+            print(f"  Voltage range: 100 mV (all 4 channels)")
+            print(f"  Coupling: DC")
+            print(f"  Channels enabled: A, B, C, D")
+            print(f"  Sample rate: {sample_rate / 1e6:.2f} MS/s")
+            print(f"  Timebase index: {timebase_info.timebase_index}")
+            print(f"  Sample interval: {timebase_info.sample_interval_ns:.2f} ns")
+            print(f"  Total samples: {total_samples}")
+            print(f"  Pre-trigger samples: {pre_samples} ({pre_samples / sample_rate * 1e6:.3f} µs)")
+            print(f"  Post-trigger samples: {timebase_info.post_trigger_samples} ({timebase_info.post_trigger_samples / sample_rate * 1e6:.3f} µs)")
+            print(f"  Total capture time: {total_samples / sample_rate * 1e6:.3f} µs")
+            
+            # Show configuration success message
+            config_msg = QMessageBox()
+            config_msg.setIcon(QMessageBox.Information)
+            config_msg.setWindowTitle("Positron - Configuration Complete")
+            config_msg.setText("Scope configured successfully!")
+            config_msg.setInformativeText(
+                f"Sample Rate: {sample_rate / 1e6:.2f} MS/s\n"
+                f"Voltage Range: 100 mV (all channels)\n"
+                f"Channels: A, B, C, D enabled\n"
+                f"Capture Window: {total_samples / sample_rate * 1e6:.3f} µs\n"
+                f"  Pre-trigger: {pre_samples / sample_rate * 1e6:.3f} µs\n"
+                f"  Post-trigger: {timebase_info.post_trigger_samples / sample_rate * 1e6:.3f} µs\n\n"
+                "Phase 1.3 complete: Basic scope configuration."
+            )
+            config_msg.setStandardButtons(QMessageBox.Ok)
+            config_msg.exec()
+            
+        except Exception as e:
+            # Configuration failed
+            error_msg = QMessageBox()
+            error_msg.setIcon(QMessageBox.Critical)
+            error_msg.setWindowTitle("Configuration Error")
+            error_msg.setText("Failed to configure the oscilloscope.")
+            error_msg.setInformativeText(str(e))
+            error_msg.setStandardButtons(QMessageBox.Ok)
+            error_msg.exec()
+            
+            # Clean up and exit
+            positron_app.disconnect_scope()
+            return 1
         
         print("Positron application initialized successfully.")
         print(f"Connected to: PicoScope {scope_info.variant} (Serial: {scope_info.serial})")

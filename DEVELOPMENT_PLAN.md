@@ -68,10 +68,24 @@ pip install PySide6 pyqtgraph numpy picosdk
 - Save detected scope series to configuration
 
 ### 1.3 Basic Scope Configuration
-- Configure maximum sample rate (automatic based on scope model)
-- Set voltage range (preset, same for all channels)
-- Configure pre-trigger sample capture
-- Set waveform length (1000-2000 samples, configurable)
+- Apply hardcoded optimal settings for pulse detection experiments
+- Configure all 4 channels with 100mV voltage range and DC coupling
+- Set maximum sample rate (timebase 0 or fastest available)
+- Calculate sample counts based on time windows (1 µs pre-trigger, 2 µs post-trigger)
+
+**Phase 1.3 Status**: ✅ Complete
+- `positron/scope/configuration.py` - Configuration module with PS3000a implementation
+- `ScopeConfigurator` protocol for extensibility
+- `PS3000aConfigurator` class with hardcoded optimal settings:
+  - Hardware constants: 100mV range, 4 channels enabled, DC coupling
+  - Time-based sampling: 1µs pre-trigger, 2µs post-trigger (3µs total)
+  - Automatic sample count calculation based on achieved sample rate
+- `PS6000aConfigurator` stub for future implementation
+- Factory function `create_configurator()` for series-specific instantiation
+- Updated `ScopeInfo` dataclass to include `api_module` reference
+- Simplified `ScopeConfig` to store only achieved values (not configurable parameters)
+- Integration with `main.py` startup flow with detailed status display
+- Tested successfully with PicoScope 3406D MSO (250 MS/s achieved)
 
 ### 1.4 Trigger Configuration
 - Implement advanced trigger setup using Picoscope's AND/OR logic
@@ -80,13 +94,11 @@ pip install PySide6 pyqtgraph numpy picosdk
 
 **Deliverable**: Application that connects to a Picoscope and configures basic acquisition parameters.
 
-**Phase 1.2 Status**: ✅ Complete
-- `positron/scope/connection.py` - Auto-detection and connection logic
-- `ScopeConnection` class for managing device lifecycle
-- `ScopeInfo` dataclass for device information
-- Power state handling for USB-powered scopes
-- Integration with `PositronApp` for state management
-- Tested successfully with PicoScope 3406D MSO hardware
+**Phase 1 Status Summary**:
+- ✅ Phase 1.1: Project Structure - Complete
+- ✅ Phase 1.2: Scope Connection - Complete  
+- ✅ Phase 1.3: Basic Scope Configuration - Complete
+- ⏳ Phase 1.4: Trigger Configuration - Pending
 
 ---
 
@@ -236,6 +248,8 @@ pip install PySide6 pyqtgraph numpy picosdk
 - **Threading model**: Separate threads for acquisition, processing, and UI
 - **Data flow**: Acquisition → Processing Queue → Event Storage → UI/Analysis
 - **Event storage**: In-memory only; CSV export between runs
+- **Hardware configuration**: Fixed optimal settings (100mV, 4 channels, DC coupling, max rate)
+- **Sample timing**: Time-based (1 µs pre-trigger, 2 µs post-trigger) with automatic sample count calculation
 
 ### Open Questions (to be resolved during development)
 - Baseline determination method
@@ -261,12 +275,13 @@ Positron/
 ├── positron/
 │   ├── __init__.py
 │   ├── app.py                 # Application state manager (PositronApp class)
-│   ├── config.py              # Configuration management
+│   ├── config.py              # Configuration management (simplified - stores achieved values only)
 │   ├── scope/
 │   │   ├── __init__.py
-│   │   ├── connection.py      # Scope discovery and connection
-│   │   ├── acquisition.py     # Data acquisition engine
-│   │   └── trigger.py         # Trigger configuration
+│   │   ├── connection.py      # Scope discovery and connection (Phase 1.2 ✅)
+│   │   ├── configuration.py   # Scope hardware configuration (Phase 1.3 ✅)
+│   │   ├── acquisition.py     # Data acquisition engine (Phase 2/3)
+│   │   └── trigger.py         # Trigger configuration (Phase 1.4)
 │   ├── processing/
 │   │   ├── __init__.py
 │   │   ├── pulse.py           # Pulse detection and analysis

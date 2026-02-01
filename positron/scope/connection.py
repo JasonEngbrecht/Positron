@@ -21,6 +21,7 @@ class ScopeInfo:
     serial: str
     handle: ctypes.c_int16
     max_adc: int  # Maximum ADC count for voltage conversion
+    api_module: Any  # Reference to ps3000a or ps6000a module
 
 
 class ScopeConnection:
@@ -132,7 +133,8 @@ class ScopeConnection:
             variant=variant_str,
             serial=serial_str,
             handle=chandle,
-            max_adc=max_adc.value
+            max_adc=max_adc.value,
+            api_module=ps
         )
     
     def _connect_ps6000a(self) -> ScopeInfo:
@@ -181,7 +183,8 @@ class ScopeConnection:
             variant=variant_str,
             serial=serial_str,
             handle=chandle,
-            max_adc=max_adc.value
+            max_adc=max_adc.value,
+            api_module=ps
         )
     
     def _get_unit_info_ps3000a(self, chandle: ctypes.c_int16, ps, info_type: int) -> str:
