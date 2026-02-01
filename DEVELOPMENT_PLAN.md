@@ -59,10 +59,13 @@ pip install PySide6 pyqtgraph numpy picosdk
 - Establish configuration management (scope settings, defaults)
 
 ### 1.2 Scope Connection
-- Implement scope discovery and connection for 3000 and 6000 series
-- Create startup dialog for scope series selection
-- Handle connection errors gracefully
+- Implement automatic scope discovery and connection for 3000a and 6000a series
+- Detect connected scope automatically (tries 3000a first, then 6000a)
+- Handle power state changes automatically (status codes 282, 286)
+- Retrieve and display device information (variant, serial number, max ADC)
+- Handle connection errors gracefully with retry/cancel dialogs
 - Implement scope disconnection/cleanup
+- Save detected scope series to configuration
 
 ### 1.3 Basic Scope Configuration
 - Configure maximum sample rate (automatic based on scope model)
@@ -76,6 +79,14 @@ pip install PySide6 pyqtgraph numpy picosdk
 - Store/recall trigger configurations
 
 **Deliverable**: Application that connects to a Picoscope and configures basic acquisition parameters.
+
+**Phase 1.2 Status**: ✅ Complete
+- `positron/scope/connection.py` - Auto-detection and connection logic
+- `ScopeConnection` class for managing device lifecycle
+- `ScopeInfo` dataclass for device information
+- Power state handling for USB-powered scopes
+- Integration with `PositronApp` for state management
+- Tested successfully with PicoScope 3406D MSO hardware
 
 ---
 
@@ -246,10 +257,10 @@ Positron/
 ├── README.md
 ├── DEVELOPMENT_PLAN.md
 ├── requirements.txt
-├── main.py
+├── main.py                    # Application entry point (startup script)
 ├── positron/
 │   ├── __init__.py
-│   ├── app.py                 # Main application class
+│   ├── app.py                 # Application state manager (PositronApp class)
 │   ├── config.py              # Configuration management
 │   ├── scope/
 │   │   ├── __init__.py

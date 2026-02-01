@@ -28,7 +28,11 @@ python main.py
 Currently implementing Phase 1: Foundation & Scope Communication.
 
 - ✅ Phase 1.1: Project Structure - Complete
-- ⏳ Phase 1.2: Scope Connection - In Progress
+- ✅ Phase 1.2: Scope Connection - Complete
+  - Automatic detection of PS3000a/PS6000a series
+  - Device information retrieval
+  - Power state handling
+  - Configuration persistence
 - ⏳ Phase 1.3: Basic Scope Configuration - Pending
 - ⏳ Phase 1.4: Trigger Configuration - Pending
 

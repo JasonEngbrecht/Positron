@@ -13,7 +13,9 @@ class ScopeConfig:
     """Configuration for oscilloscope settings."""
     
     # Scope identification
-    scope_series: Optional[str] = None  # "3000" or "6000"
+    scope_series: Optional[str] = None  # "3000a" or "6000a"
+    last_variant: Optional[str] = None  # Last connected variant (e.g., "3406D MSO")
+    last_serial: Optional[str] = None  # Last connected serial number
     
     # Channel settings (applied to all 4 channels)
     voltage_range: float = 2.0  # Volts, preset same for all channels
@@ -34,6 +36,8 @@ class ScopeConfig:
         """Convert configuration to dictionary for serialization."""
         return {
             "scope_series": self.scope_series,
+            "last_variant": self.last_variant,
+            "last_serial": self.last_serial,
             "voltage_range": self.voltage_range,
             "enabled_channels": self.enabled_channels,
             "waveform_length": self.waveform_length,
