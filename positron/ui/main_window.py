@@ -58,8 +58,8 @@ class MainWindow(QMainWindow):
             title = "Positron"
         self.setWindowTitle(title)
         
-        # Window size
-        self.resize(1200, 800)
+        # Window size (laptop-friendly default)
+        self.resize(1000, 700)
         
         # Center on screen
         screen_geometry = self.screen().availableGeometry()
@@ -73,10 +73,6 @@ class MainWindow(QMainWindow):
         self.home_panel = HomePanel(self.app)
         self.tabs.addTab(self.home_panel, "Home")
         
-        # Calibration panel (Phase 4)
-        self.calibration_panel = CalibrationPanel(self.app)
-        self.tabs.addTab(self.calibration_panel, "Calibration")
-        
         # Energy Display panel (Phase 5)
         self.energy_panel = EnergyDisplayPanel(self.app)
         self.tabs.addTab(self.energy_panel, "Energy Display")
@@ -84,6 +80,10 @@ class MainWindow(QMainWindow):
         # Timing Display panel (Phase 5)
         self.timing_panel = TimingDisplayPanel(self.app)
         self.tabs.addTab(self.timing_panel, "Timing Display")
+        
+        # Calibration panel (Phase 4) - last tab for workflow
+        self.calibration_panel = CalibrationPanel(self.app)
+        self.tabs.addTab(self.calibration_panel, "Calibration")
     
     def _setup_menubar(self) -> None:
         """Create the menu bar."""

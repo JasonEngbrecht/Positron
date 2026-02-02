@@ -129,7 +129,6 @@ class PS3000aAcquisitionEngine(QThread):
         
         # Statistics
         self.total_captures = 0
-        self._diagnostic_counter = 0  # For printing every Nth event
     
     def _calculate_timebase(self) -> int:
         """
@@ -348,19 +347,6 @@ class PS3000aAcquisitionEngine(QThread):
             # Store all events from this batch
             num_added = self.event_storage.add_events(events_to_store)
             
-            # Diagnostic: Print every 100th event
-            for event in events_to_store:
-                self._diagnostic_counter += 1
-                if self._diagnostic_counter % 100 == 0:
-                    print(f"\n=== Event #{event.event_id} (every 100th event diagnostic) ===")
-                    print(f"Timestamp: {event.timestamp:.3f} s")
-                    for ch_name in ['A', 'B', 'C', 'D']:
-                        pulse = event.channels[ch_name]
-                        status = "PULSE" if pulse.has_pulse else "no pulse"
-                        print(f"  Ch{ch_name}: timing={pulse.timing_ns:7.2f} ns, "
-                              f"energy={pulse.energy:8.1f} mV·ns, "
-                              f"peak={pulse.peak_mv:6.2f} mV [{status}]")
-            
             # Check storage capacity
             if num_added < len(events_to_store):
                 self.storage_warning.emit(
@@ -426,7 +412,6 @@ class PS3000aAcquisitionEngine(QThread):
             self._running = True
             self._stop_requested = False
             self.total_captures = 0
-            self._diagnostic_counter = 0  # Reset diagnostic counter
         
         # Start the thread (calls run())
         super().start()

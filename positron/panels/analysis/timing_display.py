@@ -27,8 +27,8 @@ from positron.panels.analysis.utils import (
 )
 
 
-# Slot colors for different timing curves
-SLOT_COLORS = [
+# Plot colors for different timing curves
+PLOT_COLORS = [
     QColor(31, 119, 180),   # Blue
     QColor(255, 127, 14),   # Orange
     QColor(44, 160, 44),    # Green
@@ -36,132 +36,129 @@ SLOT_COLORS = [
 ]
 
 
-class TimingSlotWidget(QWidget):
-    """Widget for configuring a single timing histogram slot (no plot)."""
+class TimingPlotWidget(QWidget):
+    """Widget for configuring a single timing histogram plot in a compact single-row layout."""
     
     # Signal emitted when configuration changes
     config_changed = Signal()
     
-    def __init__(self, slot_number: int, parent=None):
+    def __init__(self, plot_number: int, parent=None):
         """
-        Initialize timing slot widget.
+        Initialize timing plot widget.
         
         Args:
-            slot_number: Slot number (1-4)
+            plot_number: Plot number (1-4)
             parent: Parent widget
         """
         super().__init__(parent)
         
-        self.slot_number = slot_number
+        self.plot_number = plot_number
         self._setup_ui()
     
     def _setup_ui(self) -> None:
-        """Create UI elements."""
-        layout = QVBoxLayout(self)
-        layout.setContentsMargins(5, 5, 5, 5)
+        """Create UI elements in a single horizontal row."""
+        layout = QHBoxLayout(self)
+        layout.setContentsMargins(2, 2, 2, 2)
+        layout.setSpacing(4)
         
-        # Header with enable checkbox
-        header_layout = QHBoxLayout()
-        self.enable_check = QCheckBox(f"Slot {self.slot_number}")
+        # Enable checkbox with plot number
+        self.enable_check = QCheckBox(f"Plot {self.plot_number}")
         self.enable_check.setChecked(False)
         self.enable_check.stateChanged.connect(self._on_config_changed)
         header_font = QFont()
         header_font.setBold(True)
         self.enable_check.setFont(header_font)
-        header_layout.addWidget(self.enable_check)
+        layout.addWidget(self.enable_check)
         
         # Color indicator
-        color = SLOT_COLORS[self.slot_number - 1]
+        color = PLOT_COLORS[self.plot_number - 1]
         color_label = QLabel("●")
-        color_label.setStyleSheet(f"QLabel {{ color: rgb({color.red()}, {color.green()}, {color.blue()}); font-size: 20pt; }}")
-        header_layout.addWidget(color_label)
+        color_label.setStyleSheet(f"QLabel {{ color: rgb({color.red()}, {color.green()}, {color.blue()}); font-size: 16pt; }}")
+        layout.addWidget(color_label)
         
-        header_layout.addStretch()
-        layout.addLayout(header_layout)
+        # Start channel selector
+        layout.addWidget(QLabel("Start:"))
+        self.start_combo = QComboBox()
+        self.start_combo.addItems(['None', 'A', 'B', 'C', 'D'])
+        self.start_combo.currentTextChanged.connect(self._on_config_changed)
+        self.start_combo.setMaximumWidth(70)
+        layout.addWidget(self.start_combo)
         
-        # Channel selectors
-        selector_layout = QHBoxLayout()
-        selector_layout.addWidget(QLabel("Ch1:"))
-        self.ch1_combo = QComboBox()
-        self.ch1_combo.addItems(['None', 'A', 'B', 'C', 'D'])
-        self.ch1_combo.currentTextChanged.connect(self._on_config_changed)
-        selector_layout.addWidget(self.ch1_combo)
+        # Start energy range
+        self.start_min_spin = QDoubleSpinBox()
+        self.start_min_spin.setRange(0.0, 10000.0)
+        self.start_min_spin.setValue(0.0)
+        self.start_min_spin.setDecimals(0)
+        self.start_min_spin.setSuffix(" keV")
+        self.start_min_spin.setMaximumWidth(70)
+        self.start_min_spin.valueChanged.connect(self._on_config_changed)
+        layout.addWidget(self.start_min_spin)
         
-        selector_layout.addWidget(QLabel("Ch2:"))
-        self.ch2_combo = QComboBox()
-        self.ch2_combo.addItems(['None', 'A', 'B', 'C', 'D'])
-        self.ch2_combo.currentTextChanged.connect(self._on_config_changed)
-        selector_layout.addWidget(self.ch2_combo)
+        layout.addWidget(QLabel("-"))
         
-        layout.addLayout(selector_layout)
+        self.start_max_spin = QDoubleSpinBox()
+        self.start_max_spin.setRange(0.0, 10000.0)
+        self.start_max_spin.setValue(2000.0)
+        self.start_max_spin.setDecimals(0)
+        self.start_max_spin.setSuffix(" keV")
+        self.start_max_spin.setMaximumWidth(70)
+        self.start_max_spin.valueChanged.connect(self._on_config_changed)
+        layout.addWidget(self.start_max_spin)
         
-        # Energy filters
-        filter_grid = QGridLayout()
+        # Stop channel selector
+        layout.addWidget(QLabel("Stop:"))
+        self.stop_combo = QComboBox()
+        self.stop_combo.addItems(['None', 'A', 'B', 'C', 'D'])
+        self.stop_combo.currentTextChanged.connect(self._on_config_changed)
+        self.stop_combo.setMaximumWidth(70)
+        layout.addWidget(self.stop_combo)
         
-        # Channel 1 energy filter
-        filter_grid.addWidget(QLabel("Ch1 (keV):"), 0, 0)
-        self.ch1_min_spin = QDoubleSpinBox()
-        self.ch1_min_spin.setRange(0.0, 10000.0)
-        self.ch1_min_spin.setValue(0.0)
-        self.ch1_min_spin.setDecimals(1)
-        self.ch1_min_spin.setPrefix("min:")
-        self.ch1_min_spin.setMaximumWidth(100)
-        self.ch1_min_spin.valueChanged.connect(self._on_config_changed)
-        filter_grid.addWidget(self.ch1_min_spin, 0, 1)
+        # Stop energy range
+        self.stop_min_spin = QDoubleSpinBox()
+        self.stop_min_spin.setRange(0.0, 10000.0)
+        self.stop_min_spin.setValue(0.0)
+        self.stop_min_spin.setDecimals(0)
+        self.stop_min_spin.setSuffix(" keV")
+        self.stop_min_spin.setMaximumWidth(70)
+        self.stop_min_spin.valueChanged.connect(self._on_config_changed)
+        layout.addWidget(self.stop_min_spin)
         
-        self.ch1_max_spin = QDoubleSpinBox()
-        self.ch1_max_spin.setRange(0.0, 10000.0)
-        self.ch1_max_spin.setValue(2000.0)
-        self.ch1_max_spin.setDecimals(1)
-        self.ch1_max_spin.setPrefix("max:")
-        self.ch1_max_spin.setMaximumWidth(100)
-        self.ch1_max_spin.valueChanged.connect(self._on_config_changed)
-        filter_grid.addWidget(self.ch1_max_spin, 0, 2)
+        layout.addWidget(QLabel("-"))
         
-        # Channel 2 energy filter
-        filter_grid.addWidget(QLabel("Ch2 (keV):"), 1, 0)
-        self.ch2_min_spin = QDoubleSpinBox()
-        self.ch2_min_spin.setRange(0.0, 10000.0)
-        self.ch2_min_spin.setValue(0.0)
-        self.ch2_min_spin.setDecimals(1)
-        self.ch2_min_spin.setPrefix("min:")
-        self.ch2_min_spin.setMaximumWidth(100)
-        self.ch2_min_spin.valueChanged.connect(self._on_config_changed)
-        filter_grid.addWidget(self.ch2_min_spin, 1, 1)
+        self.stop_max_spin = QDoubleSpinBox()
+        self.stop_max_spin.setRange(0.0, 10000.0)
+        self.stop_max_spin.setValue(2000.0)
+        self.stop_max_spin.setDecimals(0)
+        self.stop_max_spin.setSuffix(" keV")
+        self.stop_max_spin.setMaximumWidth(70)
+        self.stop_max_spin.valueChanged.connect(self._on_config_changed)
+        layout.addWidget(self.stop_max_spin)
         
-        self.ch2_max_spin = QDoubleSpinBox()
-        self.ch2_max_spin.setRange(0.0, 10000.0)
-        self.ch2_max_spin.setValue(2000.0)
-        self.ch2_max_spin.setDecimals(1)
-        self.ch2_max_spin.setPrefix("max:")
-        self.ch2_max_spin.setMaximumWidth(100)
-        self.ch2_max_spin.valueChanged.connect(self._on_config_changed)
-        filter_grid.addWidget(self.ch2_max_spin, 1, 2)
-        
-        layout.addLayout(filter_grid)
-        
-        # Status label
+        # Status label at the end
         self.status_label = QLabel("Not configured")
         self.status_label.setStyleSheet("QLabel { font-size: 9pt; color: #666; }")
+        self.status_label.setMinimumWidth(100)
         layout.addWidget(self.status_label)
+        
+        layout.addStretch()
     
     def _on_config_changed(self) -> None:
         """Handle configuration change."""
         self.config_changed.emit()
     
     def get_config(self) -> Dict:
-        """Get current slot configuration."""
-        ch1 = self.ch1_combo.currentText()
-        ch2 = self.ch2_combo.currentText()
+        """Get current plot configuration."""
+        start_ch = self.start_combo.currentText()
+        stop_ch = self.stop_combo.currentText()
         
         return {
             'enabled': self.enable_check.isChecked(),
-            'channel_1': ch1 if ch1 != 'None' else None,
-            'channel_2': ch2 if ch2 != 'None' else None,
-            'ch1_energy_min': self.ch1_min_spin.value(),
-            'ch1_energy_max': self.ch1_max_spin.value(),
-            'ch2_energy_min': self.ch2_min_spin.value(),
-            'ch2_energy_max': self.ch2_max_spin.value()
+            'start_channel': start_ch if start_ch != 'None' else None,
+            'stop_channel': stop_ch if stop_ch != 'None' else None,
+            'start_energy_min': self.start_min_spin.value(),
+            'start_energy_max': self.start_max_spin.value(),
+            'stop_energy_min': self.stop_min_spin.value(),
+            'stop_energy_max': self.stop_max_spin.value()
         }
     
     def set_status(self, status: str) -> None:
@@ -206,43 +203,37 @@ class TimingDisplayPanel(QWidget):
     def _setup_ui(self) -> None:
         """Create and layout all UI elements."""
         layout = QVBoxLayout(self)
+        layout.setSpacing(4)
+        layout.setContentsMargins(4, 4, 4, 4)
         
         # Title
-        title = QLabel("Timing Display - Time Differences Between Channels")
+        title = QLabel("Timing Display")
         title_font = QFont()
-        title_font.setPointSize(16)
+        title_font.setPointSize(12)
         title_font.setBold(True)
         title.setFont(title_font)
         title.setAlignment(Qt.AlignCenter)
         layout.addWidget(title)
         
-        # Instructions
-        instructions = QLabel(
-            "Configure up to 4 timing difference histograms (all shown on one plot). "
-            "Shows (Channel 1 time - Channel 2 time) with energy filtering."
-        )
-        instructions.setWordWrap(True)
-        instructions.setAlignment(Qt.AlignCenter)
-        instructions.setStyleSheet("QLabel { color: #666; padding: 5px; }")
-        layout.addWidget(instructions)
-        
         # Main plot
         self.plot_widget = self._create_plot_widget()
         layout.addWidget(self.plot_widget, stretch=2)
         
-        # Timing slots in horizontal layout
-        slots_group = QGroupBox("Slot Configuration")
-        slots_layout = QGridLayout()
+        # Timing plots in vertical layout (4 rows, compact)
+        plots_group = QGroupBox("Plot Configuration")
+        plots_layout = QVBoxLayout()
+        plots_layout.setSpacing(2)
+        plots_layout.setContentsMargins(4, 4, 4, 4)
         
-        self.timing_slots = []
+        self.timing_plots = []
         for i in range(4):
-            slot = TimingSlotWidget(i + 1)
-            slot.config_changed.connect(self._update_display)
-            self.timing_slots.append(slot)
-            slots_layout.addWidget(slot, i // 2, i % 2)
+            plot = TimingPlotWidget(i + 1)
+            plot.config_changed.connect(self._update_display)
+            self.timing_plots.append(plot)
+            plots_layout.addWidget(plot)
         
-        slots_group.setLayout(slots_layout)
-        layout.addWidget(slots_group)
+        plots_group.setLayout(plots_layout)
+        layout.addWidget(plots_group)
         
         # Global controls
         controls = self._create_controls()
@@ -253,7 +244,7 @@ class TimingDisplayPanel(QWidget):
         self.status_label.setStyleSheet("QLabel { padding: 5px; }")
         layout.addWidget(self.status_label)
         
-        # Store plot items for each slot
+        # Store plot items for each plot
         self._plot_items: Dict[int, Optional[pg.PlotDataItem]] = {
             0: None, 1: None, 2: None, 3: None
         }
@@ -261,12 +252,12 @@ class TimingDisplayPanel(QWidget):
     def _create_plot_widget(self) -> pg.PlotWidget:
         """Create the main PyQtGraph plot widget."""
         plot = pg.PlotWidget()
-        plot.setMinimumHeight(400)
+        plot.setMinimumHeight(140)
         
         # Configure plot
         plot_item = plot.getPlotItem()
         plot_item.setLabel('left', 'Counts')
-        plot_item.setLabel('bottom', 'Time Difference', units='ns')
+        plot_item.setLabel('bottom', 'Time Difference (Stop - Start)', units='ns')
         plot_item.setTitle('Timing Differences')
         plot.showGrid(x=True, y=True, alpha=0.3)
         
@@ -282,88 +273,92 @@ class TimingDisplayPanel(QWidget):
         return plot
     
     def _create_controls(self) -> QGroupBox:
-        """Create global control widgets."""
+        """Create compact global control widgets."""
         group = QGroupBox("Global Controls")
         layout = QVBoxLayout()
+        layout.setSpacing(2)
+        layout.setContentsMargins(4, 4, 4, 4)
         
-        # Log scale checkbox
-        log_layout = QHBoxLayout()
-        self.log_scale_check = QCheckBox("Logarithmic Y-axis")
+        # First row: Log scale + Binning mode
+        first_row = QHBoxLayout()
+        self.log_scale_check = QCheckBox("Log Y-axis")
         self.log_scale_check.setChecked(False)
         self.log_scale_check.stateChanged.connect(self._on_log_scale_changed)
-        log_layout.addWidget(self.log_scale_check)
-        log_layout.addStretch()
-        layout.addLayout(log_layout)
+        first_row.addWidget(self.log_scale_check)
         
-        # Binning mode
-        binning_layout = QHBoxLayout()
-        binning_layout.addWidget(QLabel("Binning Mode:"))
+        first_row.addWidget(QLabel(" | Binning:"))
         
-        self.auto_radio = QRadioButton("Automatic (1000 bins)")
+        self.auto_radio = QRadioButton("Auto (1000)")
         self.auto_radio.setChecked(True)
         self.auto_radio.toggled.connect(self._on_binning_mode_changed)
-        binning_layout.addWidget(self.auto_radio)
+        first_row.addWidget(self.auto_radio)
         
         self.manual_radio = QRadioButton("Manual")
-        binning_layout.addWidget(self.manual_radio)
-        binning_layout.addStretch()
-        layout.addLayout(binning_layout)
+        first_row.addWidget(self.manual_radio)
+        first_row.addStretch()
+        layout.addLayout(first_row)
         
-        # Manual binning controls
-        manual_group = QGroupBox("Manual Binning Settings")
-        manual_layout = QGridLayout()
+        # Manual binning controls (compact grid)
+        manual_layout = QHBoxLayout()
+        manual_layout.setSpacing(4)
         
-        manual_layout.addWidget(QLabel("Min Time (ns):"), 0, 0)
+        manual_layout.addWidget(QLabel("Range (ns):"))
         self.min_time_spin = QDoubleSpinBox()
         self.min_time_spin.setRange(-10000.0, 10000.0)
         self.min_time_spin.setValue(-100.0)
         self.min_time_spin.setDecimals(1)
-        self.min_time_spin.setSuffix(" ns")
-        manual_layout.addWidget(self.min_time_spin, 0, 1)
+        self.min_time_spin.setMaximumWidth(80)
+        manual_layout.addWidget(self.min_time_spin)
         
-        manual_layout.addWidget(QLabel("Max Time (ns):"), 0, 2)
+        manual_layout.addWidget(QLabel("to"))
         self.max_time_spin = QDoubleSpinBox()
         self.max_time_spin.setRange(-10000.0, 10000.0)
         self.max_time_spin.setValue(100.0)
         self.max_time_spin.setDecimals(1)
-        self.max_time_spin.setSuffix(" ns")
-        manual_layout.addWidget(self.max_time_spin, 0, 3)
+        self.max_time_spin.setMaximumWidth(80)
+        manual_layout.addWidget(self.max_time_spin)
         
-        manual_layout.addWidget(QLabel("Number of Bins:"), 1, 0)
+        manual_layout.addWidget(QLabel("Bins:"))
         self.bins_spin = QSpinBox()
         self.bins_spin.setRange(20, 2000)
         self.bins_spin.setValue(1000)
-        manual_layout.addWidget(self.bins_spin, 1, 1)
+        self.bins_spin.setMaximumWidth(80)
+        manual_layout.addWidget(self.bins_spin)
+        manual_layout.addStretch()
         
-        manual_group.setLayout(manual_layout)
-        manual_group.setEnabled(False)  # Disabled by default (automatic mode)
-        self.manual_controls_group = manual_group
-        layout.addWidget(manual_group)
+        self.manual_controls_layout = manual_layout
+        layout.addLayout(manual_layout)
         
-        # Update button
-        button_layout = QHBoxLayout()
-        self.update_button = QPushButton("Update All Histograms")
-        self.update_button.clicked.connect(self._update_display)
-        button_layout.addWidget(self.update_button)
-        button_layout.addStretch()
-        layout.addLayout(button_layout)
+        # Enable/disable manual controls based on mode
+        self._enable_manual_controls(False)
         
         group.setLayout(layout)
         return group
     
+    def _enable_manual_controls(self, enabled: bool) -> None:
+        """Enable or disable manual binning controls."""
+        self.min_time_spin.setEnabled(enabled)
+        self.max_time_spin.setEnabled(enabled)
+        self.bins_spin.setEnabled(enabled)
+    
     def _on_log_scale_changed(self, state: int) -> None:
         """Handle log scale checkbox change."""
         self._log_scale = (state == Qt.Checked)
+        # Clear all plots first to avoid issues with log mode transitions
+        for i in range(4):
+            if self._plot_items[i] is not None:
+                self.plot_widget.removeItem(self._plot_items[i])
+                self._plot_items[i] = None
         self._update_display()
     
     def _on_binning_mode_changed(self, checked: bool) -> None:
         """Handle binning mode radio button change."""
         if checked:  # Auto radio is checked
             self._binning_mode = 'automatic'
-            self.manual_controls_group.setEnabled(False)
+            self._enable_manual_controls(False)
         else:
             self._binning_mode = 'manual'
-            self.manual_controls_group.setEnabled(True)
+            self._enable_manual_controls(True)
         
         self._update_display()
     
@@ -374,8 +369,8 @@ class TimingDisplayPanel(QWidget):
         
         if event_count == 0:
             self.status_label.setText("No events in storage. Acquire data in Home panel first.")
-            for i, slot in enumerate(self.timing_slots):
-                slot.set_status("No data")
+            for i, plot in enumerate(self.timing_plots):
+                plot.set_status("No data")
                 # Clear old plot items
                 if self._plot_items[i] is not None:
                     self.plot_widget.removeItem(self._plot_items[i])
@@ -392,12 +387,12 @@ class TimingDisplayPanel(QWidget):
             num_bins = self.bins_spin.value()
             time_range = (self.min_time_spin.value(), self.max_time_spin.value())
         
-        # Update each slot
-        active_slots = 0
+        # Update each plot
+        active_plots = 0
         status_parts = [f"Total events: {event_count:,}"]
         
-        for i, slot in enumerate(self.timing_slots):
-            config = slot.get_config()
+        for i, plot in enumerate(self.timing_plots):
+            config = plot.get_config()
             
             # Clear old plot item
             if self._plot_items[i] is not None:
@@ -405,39 +400,39 @@ class TimingDisplayPanel(QWidget):
                 self._plot_items[i] = None
             
             if not config['enabled']:
-                slot.set_status("Disabled")
+                plot.set_status("Disabled")
                 continue
             
             # Validate configuration
-            if config['channel_1'] is None or config['channel_2'] is None:
-                slot.set_status("Select both channels")
+            if config['start_channel'] is None or config['stop_channel'] is None:
+                plot.set_status("Select both channels")
                 continue
             
-            if config['channel_1'] == config['channel_2']:
-                slot.set_status("⚠ Same channel selected")
+            if config['start_channel'] == config['stop_channel']:
+                plot.set_status("⚠ Same channel")
                 continue
             
             # Check calibration
-            ch1_info = get_channel_info(self.app, config['channel_1'])
-            ch2_info = get_channel_info(self.app, config['channel_2'])
+            start_info = get_channel_info(self.app, config['start_channel'])
+            stop_info = get_channel_info(self.app, config['stop_channel'])
             
-            if not ch1_info['calibrated'] or not ch2_info['calibrated']:
-                slot.set_status("⚠ Not calibrated")
+            if not start_info['calibrated'] or not stop_info['calibrated']:
+                plot.set_status("⚠ Not calibrated")
                 continue
             
-            # Calculate timing differences
+            # Calculate timing differences (Stop - Start, so we pass stop as channel_1)
             time_diffs = calculate_timing_differences(
                 events,
-                config['channel_1'],
-                config['channel_2'],
-                ch1_info['calibration'],
-                ch2_info['calibration'],
-                (config['ch1_energy_min'], config['ch1_energy_max']),
-                (config['ch2_energy_min'], config['ch2_energy_max'])
+                config['stop_channel'],  # Stop is channel_1 for calculation
+                config['start_channel'],  # Start is channel_2 for calculation
+                stop_info['calibration'],
+                start_info['calibration'],
+                (config['stop_energy_min'], config['stop_energy_max']),
+                (config['start_energy_min'], config['start_energy_max'])
             )
             
             if len(time_diffs) == 0:
-                slot.set_status("No events match filters")
+                plot.set_status("No events match filters")
                 continue
             
             # Calculate histogram
@@ -448,14 +443,20 @@ class TimingDisplayPanel(QWidget):
             
             counts, bin_edges = np.histogram(time_diffs, bins=num_bins, range=hist_range)
             
+            # Transform to log scale if needed
+            plot_counts = counts.copy().astype(float)
+            if self._log_scale:
+                # Use log10(count + 1) to avoid log(0) and handle zeros naturally
+                plot_counts = np.log10(counts + 1)
+            
             # Plot on shared plot widget
-            color = SLOT_COLORS[i]
+            color = PLOT_COLORS[i]
             pen = pg.mkPen(color=color, width=2)
             
-            label = f"Slot {i+1}: {config['channel_1']}-{config['channel_2']}"
+            label = f"Plot {i+1}: {config['stop_channel']}-{config['start_channel']}"
             self._plot_items[i] = self.plot_widget.plot(
                 bin_edges,
-                counts,
+                plot_counts,
                 stepMode=True,
                 fillLevel=0,
                 brush=None,
@@ -463,17 +464,13 @@ class TimingDisplayPanel(QWidget):
                 name=label
             )
             
-            # Update slot status
-            slot.set_status(f"Events: {len(time_diffs):,}")
-            active_slots += 1
-            status_parts.append(f"Slot {i+1}: {len(time_diffs):,}")
-        
-        # Set log mode
-        plot_item = self.plot_widget.getPlotItem()
-        plot_item.setLogMode(x=False, y=self._log_scale)
+            # Update plot status
+            plot.set_status(f"Events: {len(time_diffs):,}")
+            active_plots += 1
+            status_parts.append(f"Plot {i+1}: {len(time_diffs):,}")
         
         # Update status
-        self.status_label.setText(" | ".join(status_parts) + f" | Active: {active_slots}/4")
+        self.status_label.setText(" | ".join(status_parts) + f" | Active: {active_plots}/4")
     
     def showEvent(self, event):
         """Override showEvent to start auto-update when panel becomes visible."""
@@ -485,3 +482,4 @@ class TimingDisplayPanel(QWidget):
         """Override hideEvent to stop auto-update when panel is hidden."""
         super().hideEvent(event)
         self._update_timer.stop()
+

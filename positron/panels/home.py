@@ -75,36 +75,85 @@ class HomePanel(QWidget):
     
     def _setup_ui(self) -> None:
         """Create and layout all UI elements."""
-        layout = QVBoxLayout(self)
+        layout = QGridLayout(self)
+        layout.setSpacing(4)
+        layout.setContentsMargins(4, 4, 4, 4)
         
         # Title
         title = QLabel("Positron Data Acquisition")
         title_font = QFont()
-        title_font.setPointSize(16)
+        title_font.setPointSize(12)
         title_font.setBold(True)
         title.setFont(title_font)
         title.setAlignment(Qt.AlignCenter)
-        layout.addWidget(title)
+        layout.addWidget(title, 0, 0, 1, 2)  # Row 0, full width
         
-        # Main controls
-        controls_group = self._create_controls_group()
-        layout.addWidget(controls_group)
+        # Scope information
+        scope_info_group = self._create_scope_info_group()
+        layout.addWidget(scope_info_group, 1, 0)  # Row 1, left
         
         # Statistics display
         stats_group = self._create_statistics_group()
-        layout.addWidget(stats_group)
-        
-        # Preset stop conditions
-        presets_group = self._create_presets_group()
-        layout.addWidget(presets_group)
+        layout.addWidget(stats_group, 1, 1)  # Row 1, right
         
         # Trigger configuration
         trigger_group = self._create_trigger_group()
-        layout.addWidget(trigger_group)
+        layout.addWidget(trigger_group, 2, 0)  # Row 2, left
+        
+        # Preset stop conditions
+        presets_group = self._create_presets_group()
+        layout.addWidget(presets_group, 2, 1)  # Row 2, right
+        
+        # Main controls
+        controls_group = self._create_controls_group()
+        layout.addWidget(controls_group, 3, 0, 1, 2)  # Row 3, full width
         
         # Waveform display
         waveform_group = self._create_waveform_group()
-        layout.addWidget(waveform_group, stretch=1)
+        layout.addWidget(waveform_group, 4, 0, 1, 2)  # Row 4, full width
+        layout.setRowStretch(4, 1)  # Make waveform row stretch to fill space
+    
+    def _create_scope_info_group(self) -> QGroupBox:
+        """Create the scope information display."""
+        group = QGroupBox("Scope Information")
+        layout = QGridLayout()
+        
+        # Get scope info and config
+        scope_info = self.app.scope_info
+        config = self.app.config.scope
+        
+        # Scope model and serial
+        layout.addWidget(QLabel("Scope:"), 0, 0)
+        scope_model = QLabel(f"{scope_info.variant} (S/N: {scope_info.serial})")
+        scope_model.setStyleSheet("font-weight: bold;")
+        layout.addWidget(scope_model, 0, 1)
+        
+        # Sample rate
+        layout.addWidget(QLabel("Sample Rate:"), 1, 0)
+        sample_rate_label = QLabel(f"{config.sample_rate / 1e6:.2f} MS/s")
+        layout.addWidget(sample_rate_label, 1, 1)
+        
+        # Voltage range
+        layout.addWidget(QLabel("Voltage Range:"), 2, 0)
+        voltage_label = QLabel("100 mV (all channels)")
+        layout.addWidget(voltage_label, 2, 1)
+        
+        # Enabled channels
+        layout.addWidget(QLabel("Channels:"), 3, 0)
+        channels_label = QLabel("A, B, C, D enabled (DC coupling)")
+        layout.addWidget(channels_label, 3, 1)
+        
+        # Capture window
+        layout.addWidget(QLabel("Capture Window:"), 4, 0)
+        total_time_us = config.waveform_length / config.sample_rate * 1e6
+        pre_time_us = config.pre_trigger_samples / config.sample_rate * 1e6
+        post_time_us = total_time_us - pre_time_us
+        capture_label = QLabel(f"{total_time_us:.3f} µs (Pre: {pre_time_us:.3f} µs, Post: {post_time_us:.3f} µs)")
+        layout.addWidget(capture_label, 4, 1)
+        
+        layout.setColumnStretch(1, 1)
+        group.setLayout(layout)
+        return group
     
     def _create_controls_group(self) -> QGroupBox:
         """Create the acquisition control buttons."""
@@ -113,7 +162,7 @@ class HomePanel(QWidget):
         
         # Start/Pause button (toggle)
         self.start_pause_btn = QPushButton("Start")
-        self.start_pause_btn.setMinimumHeight(50)
+        self.start_pause_btn.setMinimumHeight(40)
         self.start_pause_btn.setStyleSheet("QPushButton { font-size: 14pt; font-weight: bold; }")
         self.start_pause_btn.clicked.connect(self._on_start_pause_clicked)
         self._update_start_pause_button()
@@ -121,7 +170,7 @@ class HomePanel(QWidget):
         
         # Restart button
         self.restart_btn = QPushButton("Restart")
-        self.restart_btn.setMinimumHeight(50)
+        self.restart_btn.setMinimumHeight(40)
         self.restart_btn.setStyleSheet("QPushButton { font-size: 14pt; }")
         self.restart_btn.clicked.connect(self._on_restart_clicked)
         self.restart_btn.setEnabled(False)
@@ -205,19 +254,20 @@ class HomePanel(QWidget):
     def _create_trigger_group(self) -> QGroupBox:
         """Create the trigger configuration section."""
         group = QGroupBox("Trigger Configuration")
-        layout = QHBoxLayout()
+        self.trigger_group_layout = QVBoxLayout()
         
-        # Current trigger summary
-        self.trigger_summary_label = QLabel()
-        self._update_trigger_summary()
-        layout.addWidget(self.trigger_summary_label, stretch=1)
+        # Trigger summary labels will be added dynamically (one per line)
+        self.trigger_summary_labels = []
         
-        # Configure button
+        # Configure button (must be created before _update_trigger_summary)
         self.configure_trigger_btn = QPushButton("Configure Trigger...")
         self.configure_trigger_btn.clicked.connect(self._on_configure_trigger_clicked)
-        layout.addWidget(self.configure_trigger_btn)
+        self.trigger_group_layout.addWidget(self.configure_trigger_btn)
         
-        group.setLayout(layout)
+        # Now add the summary labels (inserted before the button)
+        self._update_trigger_summary()
+        
+        group.setLayout(self.trigger_group_layout)
         return group
     
     def _create_waveform_group(self) -> QGroupBox:
@@ -229,7 +279,7 @@ class HomePanel(QWidget):
         self.waveform_plot = WaveformPlot(
             update_rate_hz=self.app.config.waveform_display_rate
         )
-        self.waveform_plot.setMinimumHeight(300)
+        self.waveform_plot.setMinimumHeight(120)
         self.waveform_plot.setSizePolicy(
             QSizePolicy.Expanding,
             QSizePolicy.Expanding
@@ -262,24 +312,36 @@ class HomePanel(QWidget):
     
     def _update_trigger_summary(self) -> None:
         """Update the trigger configuration summary display."""
+        # Remove old labels
+        for label in self.trigger_summary_labels:
+            self.trigger_group_layout.removeWidget(label)
+            label.deleteLater()
+        self.trigger_summary_labels.clear()
+        
         trigger_config = self.app.config.scope.trigger
         valid_conditions = trigger_config.get_valid_conditions()
         
+        # Build list of lines to display
+        lines = []
         if not valid_conditions:
-            summary = "No trigger configured"
+            lines.append("No trigger configured")
         else:
-            parts = []
             for i, condition in enumerate(valid_conditions, 1):
                 channels = " AND ".join(condition.channels)
-                parts.append(f"Condition {i}: {channels}")
-            summary = " OR ".join(parts)
+                lines.append(f"Condition {i}: {channels}")
         
+        # Add auto-trigger status
         if trigger_config.auto_trigger_enabled:
-            summary += " (Auto-trigger: ON)"
+            lines.append("(Auto-trigger: ON)")
         else:
-            summary += " (Auto-trigger: OFF)"
+            lines.append("(Auto-trigger: OFF)")
         
-        self.trigger_summary_label.setText(summary)
+        # Create a label for each line and insert before the button
+        button_index = self.trigger_group_layout.indexOf(self.configure_trigger_btn)
+        for i, line in enumerate(lines):
+            label = QLabel(line)
+            self.trigger_summary_labels.append(label)
+            self.trigger_group_layout.insertWidget(button_index + i, label)
     
     def _on_start_pause_clicked(self) -> None:
         """Handle start/pause button click."""

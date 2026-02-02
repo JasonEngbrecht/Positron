@@ -69,6 +69,7 @@ class EnergyDisplayPanel(QWidget):
         self._num_bins = 1000
         self._manual_min_energy = 0.0
         self._manual_max_energy = 2000.0
+        self._log_mode = True  # Start with log mode enabled
         
         # Setup UI
         self._setup_ui()
@@ -81,25 +82,17 @@ class EnergyDisplayPanel(QWidget):
     def _setup_ui(self) -> None:
         """Create and layout all UI elements."""
         layout = QVBoxLayout(self)
+        layout.setSpacing(4)
+        layout.setContentsMargins(4, 4, 4, 4)
         
         # Title
         title = QLabel("Energy Display - Calibrated Energy Histograms")
         title_font = QFont()
-        title_font.setPointSize(16)
+        title_font.setPointSize(12)
         title_font.setBold(True)
         title.setFont(title_font)
         title.setAlignment(Qt.AlignCenter)
         layout.addWidget(title)
-        
-        # Instructions
-        instructions = QLabel(
-            "Displays calibrated energy (keV) for all channels. "
-            "Only calibrated channels can be enabled."
-        )
-        instructions.setWordWrap(True)
-        instructions.setAlignment(Qt.AlignCenter)
-        instructions.setStyleSheet("QLabel { color: #666; padding: 5px; }")
-        layout.addWidget(instructions)
         
         # Histogram plot
         self.plot_widget = self._create_plot_widget()
@@ -121,7 +114,7 @@ class EnergyDisplayPanel(QWidget):
     def _create_plot_widget(self) -> pg.PlotWidget:
         """Create the PyQtGraph plot widget."""
         plot = pg.PlotWidget()
-        plot.setMinimumHeight(400)
+        plot.setMinimumHeight(140)
         
         # Configure plot
         plot_item = plot.getPlotItem()
@@ -138,9 +131,6 @@ class EnergyDisplayPanel(QWidget):
         
         # Add legend
         plot.addLegend()
-        
-        # Set log mode by default
-        plot_item.setLogMode(x=False, y=True)
         
         return plot
     
@@ -269,8 +259,10 @@ class EnergyDisplayPanel(QWidget):
     def _on_log_scale_changed(self, state: int) -> None:
         """Handle log scale checkbox change."""
         log_mode = (state == Qt.Checked)
-        plot_item = self.plot_widget.getPlotItem()
-        plot_item.setLogMode(x=False, y=log_mode)
+        # Store the state and trigger a full redraw
+        # (Can't just toggle setLogMode with stepMode plots)
+        self._log_mode = log_mode
+        self._update_display()
     
     def _on_binning_mode_changed(self, checked: bool) -> None:
         """Handle binning mode radio button change."""
@@ -301,9 +293,9 @@ class EnergyDisplayPanel(QWidget):
         channel_counts = {}
         
         # Clear old plot items
-        for channel, plot_item in self._plot_items.items():
-            if plot_item is not None:
-                self.plot_widget.removeItem(plot_item)
+        for channel, plot_item_to_remove in self._plot_items.items():
+            if plot_item_to_remove is not None:
+                self.plot_widget.removeItem(plot_item_to_remove)
                 self._plot_items[channel] = None
         
         # Get binning parameters
@@ -345,13 +337,19 @@ class EnergyDisplayPanel(QWidget):
             
             counts, bin_edges = np.histogram(energies, bins=num_bins, range=hist_range)
             
+            # Transform to log scale if needed
+            plot_counts = counts.copy().astype(float)
+            if self._log_mode:
+                # Use log10(count + 1) to avoid log(0) and handle zeros naturally
+                plot_counts = np.log10(counts + 1)
+            
             # For stepMode=True, use bin_edges (N+1) for X and counts (N) for Y
             color = CHANNEL_COLORS[channel]
             pen = pg.mkPen(color=color, width=2)
             
-            plot_item = self.plot_widget.plot(
+            plot_item_new = self.plot_widget.plot(
                 bin_edges,
-                counts,
+                plot_counts,
                 stepMode=True,
                 fillLevel=0,
                 brush=None,
@@ -359,7 +357,7 @@ class EnergyDisplayPanel(QWidget):
                 name=f"Channel {channel}"
             )
             
-            self._plot_items[channel] = plot_item
+            self._plot_items[channel] = plot_item_new
         
         # Update status label
         status_parts = [f"Total events: {event_count:,}"]
@@ -379,3 +377,4 @@ class EnergyDisplayPanel(QWidget):
         """Override hideEvent to stop auto-update when panel is hidden."""
         super().hideEvent(event)
         self._update_timer.stop()
+

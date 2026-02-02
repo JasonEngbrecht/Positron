@@ -71,19 +71,21 @@ class CalibrationPanel(QWidget):
         # Setup UI
         self._setup_ui()
         
-        # Timer for periodic event count updates
+        # Timer for automatic updates (event count and histograms)
         self._update_timer = QTimer()
-        self._update_timer.timeout.connect(self._update_event_count_display)
+        self._update_timer.timeout.connect(self._auto_update)
         self._update_timer.setInterval(2000)  # Update every 2 seconds
     
     def _setup_ui(self) -> None:
         """Create and layout all UI elements."""
         layout = QVBoxLayout(self)
+        layout.setSpacing(4)
+        layout.setContentsMargins(4, 4, 4, 4)
         
         # Title
         title = QLabel("Energy Calibration - All Channels")
         title_font = QFont()
-        title_font.setPointSize(16)
+        title_font.setPointSize(12)
         title_font.setBold(True)
         title.setFont(title_font)
         title.setAlignment(Qt.AlignCenter)
@@ -91,14 +93,11 @@ class CalibrationPanel(QWidget):
         
         # Instructions
         instructions = QLabel(
-            "1. Go to Home panel and configure trigger: (A OR B OR C OR D)\n"
-            "2. Place Na-22 source near all detectors and acquire 1000+ events\n"
-            "3. Return here and click 'Update Histograms' to load data\n"
-            "4. Calibrate each channel using the tabs below"
+            "Configure trigger (A OR B OR C OR D) in Home panel, acquire 1000+ events with Na-22, then update histograms below."
         )
         instructions.setWordWrap(True)
         instructions.setAlignment(Qt.AlignCenter)
-        instructions.setStyleSheet("QLabel { color: #666; padding: 10px; }")
+        instructions.setStyleSheet("QLabel { color: #666; padding: 2px; }")
         layout.addWidget(instructions)
         
         # Data status group
@@ -107,7 +106,7 @@ class CalibrationPanel(QWidget):
         
         # Tabbed interface for each channel
         self.channel_tabs = QTabWidget()
-        self.channel_tabs.setMinimumHeight(500)
+        self.channel_tabs.setMinimumHeight(200)
         
         # Create a tab for each channel
         self.channel_widgets = {}
@@ -127,8 +126,8 @@ class CalibrationPanel(QWidget):
     def showEvent(self, event):
         """Override showEvent to refresh data when panel becomes visible."""
         super().showEvent(event)
-        # Update event count when panel is shown
-        self._update_event_count_display()
+        # Trigger immediate update when panel is shown
+        self._auto_update()
         # Start periodic updates
         self._update_timer.start()
     
@@ -138,8 +137,19 @@ class CalibrationPanel(QWidget):
         # Stop periodic updates to save resources
         self._update_timer.stop()
     
+    def _auto_update(self) -> None:
+        """Automatically update event count and histograms."""
+        # Update event count display
+        self._update_event_count_display()
+        
+        # Update histograms for all channels if we have data
+        count = self.app.event_storage.get_count()
+        if count > 0:
+            for channel in ['A', 'B', 'C', 'D']:
+                self._update_histogram_display(channel)
+    
     def _create_data_status_group(self) -> QGroupBox:
-        """Create data status display and update controls."""
+        """Create data status display."""
         group = QGroupBox("Calibration Data")
         layout = QHBoxLayout()
         
@@ -149,17 +159,7 @@ class CalibrationPanel(QWidget):
         self.event_count_label.setStyleSheet("QLabel { font-weight: bold; font-size: 14pt; }")
         layout.addWidget(self.event_count_label)
         
-        layout.addSpacing(20)
-        
-        # Update button
-        self.update_all_button = QPushButton("Update All Histograms")
-        self.update_all_button.clicked.connect(self._update_all_histograms)
-        layout.addWidget(self.update_all_button)
-        
-        # Clear button
-        self.clear_storage_button = QPushButton("Clear Storage")
-        self.clear_storage_button.clicked.connect(self._clear_storage)
-        layout.addWidget(self.clear_storage_button)
+        layout.addWidget(QLabel("(Auto-updates every 2 seconds)"))
         
         layout.addStretch()
         
@@ -171,62 +171,7 @@ class CalibrationPanel(QWidget):
         """Update the event count display."""
         count = self.app.event_storage.get_count()
         self.event_count_label.setText(f"{count:,}")
-        
-        # Enable/disable update button based on data
-        self.update_all_button.setEnabled(count > 0)
     
-    def _update_all_histograms(self) -> None:
-        """Update histograms for all channels from current event storage."""
-        count = self.app.event_storage.get_count()
-        
-        if count == 0:
-            QMessageBox.information(
-                self,
-                "No Data",
-                "No events in storage. Please acquire data in the Home panel first.\n\n"
-                "Tip: Configure trigger to (A OR B OR C OR D) to capture events from all channels."
-            )
-            return
-        
-        # Update all channel histograms
-        for channel in ['A', 'B', 'C', 'D']:
-            self._update_histogram_display(channel)
-        
-        # Update count display
-        self._update_event_count_display()
-        
-        QMessageBox.information(
-            self,
-            "Histograms Updated",
-            f"All channel histograms updated with {count:,} events from storage."
-        )
-    
-    def _clear_storage(self) -> None:
-        """Clear event storage after confirmation."""
-        count = self.app.event_storage.get_count()
-        
-        if count == 0:
-            QMessageBox.information(self, "Storage Empty", "Event storage is already empty.")
-            return
-        
-        reply = QMessageBox.question(
-            self,
-            "Clear Storage",
-            f"Clear all {count:,} events from storage?\n\n"
-            "This will remove all acquired data. You will need to acquire new data in the Home panel.",
-            QMessageBox.Yes | QMessageBox.No
-        )
-        
-        if reply == QMessageBox.Yes:
-            self.app.event_storage.clear()
-            self._update_event_count_display()
-            
-            # Clear all channel histograms
-            for channel in ['A', 'B', 'C', 'D']:
-                histogram = self._get_channel_widget(channel, f"histogram_{channel}")
-                if histogram:
-                    histogram.clear_histogram()
-                self._reset_peaks(channel)
     
     def _create_channel_widget(self, channel: str) -> QWidget:
         """
@@ -257,7 +202,7 @@ class CalibrationPanel(QWidget):
         
         # Histogram
         histogram = HistogramPlot()
-        histogram.setMinimumHeight(250)
+        histogram.setMinimumHeight(120)
         histogram.setObjectName(f"histogram_{channel}")
         histogram.set_log_scale(True)  # Default to log scale
         layout.addWidget(histogram)
@@ -279,11 +224,6 @@ class CalibrationPanel(QWidget):
         bins_spin.valueChanged.connect(lambda value, ch=channel: self._on_bins_changed(ch, value))
         controls_layout.addWidget(bins_spin)
         
-        update_button = QPushButton("Update Histogram")
-        update_button.setObjectName(f"update_{channel}")
-        update_button.clicked.connect(lambda checked, ch=channel: self._update_histogram_display(ch))
-        controls_layout.addWidget(update_button)
-        
         auto_button = QPushButton("Auto-Position Regions")
         auto_button.setObjectName(f"auto_{channel}")
         auto_button.clicked.connect(lambda checked, ch=channel: self._auto_position_regions(ch))
@@ -294,30 +234,31 @@ class CalibrationPanel(QWidget):
         
         # Peak values and find button
         peak_group = QGroupBox("Step 2: Identify Peaks")
-        peak_layout = QVBoxLayout()
+        peak_layout = QHBoxLayout()
         
-        peak_grid = QGridLayout()
-        peak_grid.addWidget(QLabel(f"Peak 1 ({PEAK_1_KEV:.0f} keV):"), 0, 0)
+        peak_layout.addWidget(QLabel(f"Peak 1 ({PEAK_1_KEV:.0f} keV):"))
         peak_1_value = QLineEdit()
         peak_1_value.setObjectName(f"peak1_{channel}")
         peak_1_value.setReadOnly(True)
         peak_1_value.setPlaceholderText("Select region and find peak")
-        peak_grid.addWidget(peak_1_value, 0, 1)
+        peak_1_value.setFixedWidth(120)
+        peak_layout.addWidget(peak_1_value)
         
-        peak_grid.addWidget(QLabel(f"Peak 2 ({PEAK_2_KEV:.0f} keV):"), 1, 0)
+        peak_layout.addWidget(QLabel(f"Peak 2 ({PEAK_2_KEV:.0f} keV):"))
         peak_2_value = QLineEdit()
         peak_2_value.setObjectName(f"peak2_{channel}")
         peak_2_value.setReadOnly(True)
         peak_2_value.setPlaceholderText("Select region and find peak")
-        peak_grid.addWidget(peak_2_value, 1, 1)
-        
-        peak_layout.addLayout(peak_grid)
+        peak_2_value.setFixedWidth(120)
+        peak_layout.addWidget(peak_2_value)
         
         find_button = QPushButton("Find Peaks from Regions")
         find_button.setObjectName(f"find_{channel}")
         find_button.clicked.connect(lambda checked, ch=channel: self._find_peaks(ch))
         find_button.setEnabled(False)
         peak_layout.addWidget(find_button)
+        
+        peak_layout.addStretch()
         
         peak_group.setLayout(peak_layout)
         layout.addWidget(peak_group)
@@ -327,22 +268,26 @@ class CalibrationPanel(QWidget):
         calib_layout = QVBoxLayout()
         
         # Parameters
-        params_grid = QGridLayout()
-        params_grid.addWidget(QLabel("Gain:"), 0, 0)
+        params_layout = QHBoxLayout()
+        params_layout.addWidget(QLabel("Gain:"))
         gain_value = QLineEdit()
         gain_value.setObjectName(f"gain_{channel}")
         gain_value.setReadOnly(True)
         gain_value.setPlaceholderText("keV/(mV·ns)")
-        params_grid.addWidget(gain_value, 0, 1)
+        gain_value.setFixedWidth(120)
+        params_layout.addWidget(gain_value)
         
-        params_grid.addWidget(QLabel("Offset:"), 1, 0)
+        params_layout.addWidget(QLabel("Offset:"))
         offset_value = QLineEdit()
         offset_value.setObjectName(f"offset_{channel}")
         offset_value.setReadOnly(True)
         offset_value.setPlaceholderText("keV")
-        params_grid.addWidget(offset_value, 1, 1)
+        offset_value.setFixedWidth(120)
+        params_layout.addWidget(offset_value)
         
-        calib_layout.addLayout(params_grid)
+        params_layout.addStretch()
+        
+        calib_layout.addLayout(params_layout)
         
         # Buttons
         button_layout = QHBoxLayout()
@@ -371,7 +316,7 @@ class CalibrationPanel(QWidget):
         status_text = QTextEdit()
         status_text.setObjectName(f"status_text_{channel}")
         status_text.setReadOnly(True)
-        status_text.setMaximumHeight(80)
+        status_text.setMaximumHeight(50)
         status_text.setPlaceholderText(f"Channel {channel} calibration summary will appear here...")
         calib_layout.addWidget(status_text)
         
