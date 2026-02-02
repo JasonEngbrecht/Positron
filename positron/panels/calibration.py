@@ -419,7 +419,7 @@ class CalibrationPanel(QWidget):
         """Handle log scale checkbox change for a channel."""
         histogram = self._get_channel_widget(channel, f"histogram_{channel}")
         if histogram:
-            histogram.set_log_scale(state == Qt.Checked)
+            histogram.set_log_scale(state == 2)  # Qt.CheckState.Checked = 2
     
     def _on_bins_changed(self, channel: str, value: int) -> None:
         """Handle bins spinbox change for a channel."""

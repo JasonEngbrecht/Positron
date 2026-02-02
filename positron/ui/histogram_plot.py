@@ -43,7 +43,7 @@ class HistogramPlot(pg.PlotWidget):
         super().__init__(parent)
         
         # Plot items
-        self._histogram_item: Optional[pg.BarGraphItem] = None
+        self._histogram_item: Optional[pg.PlotDataItem] = None
         self._region_1: Optional[pg.LinearRegionItem] = None
         self._region_2: Optional[pg.LinearRegionItem] = None
         
@@ -132,19 +132,22 @@ class HistogramPlot(pg.PlotWidget):
             self.removeItem(self._histogram_item)
         
         # Use original count values (setLogMode handles the log display)
-        y_values = hist.astype(float)
+        plot_counts = hist.astype(float)
         
         # For log mode, replace zeros with small value to avoid log(0) issues
         if self._log_scale:
-            y_values = np.where(y_values > 0, y_values, 0.5)
+            plot_counts = np.where(plot_counts > 0, plot_counts, 0.5)
         
-        self._histogram_item = pg.BarGraphItem(
-            x=bin_centers,
-            height=y_values,
-            width=bin_width * 0.9,  # Slight gap between bars
-            brush='steelblue'
+        # Use stepMode plot like energy and timing displays (works with setLogMode)
+        pen = pg.mkPen(color='steelblue', width=2)
+        self._histogram_item = self.plot(
+            bin_edges,
+            plot_counts,
+            stepMode=True,
+            fillLevel=0,
+            brush=(70, 130, 180, 100),  # steelblue with transparency
+            pen=pen
         )
-        self.addItem(self._histogram_item)
         
         # Auto-range
         self.enableAutoRange()
@@ -158,13 +161,14 @@ class HistogramPlot(pg.PlotWidget):
         """
         self._log_scale = enabled
         
+        # Clear old histogram before changing log mode (BarGraphItem needs this)
+        if self._histogram_item is not None:
+            self.removeItem(self._histogram_item)
+            self._histogram_item = None
+        
         # Use native PyQtGraph log mode
         plot_item = self.getPlotItem()
         plot_item.setLogMode(y=enabled)
-        
-        # Debug output
-        print(f"[Calibration Histogram] Log mode changed to: {enabled}")
-        print(f"[Calibration Histogram] PlotItem log mode state: x={plot_item.ctrl.logXCheck.isChecked()}, y={plot_item.ctrl.logYCheck.isChecked()}")
         
         # Keep axis label as 'Counts' in both modes
         plot_item.setLabel('left', 'Counts')

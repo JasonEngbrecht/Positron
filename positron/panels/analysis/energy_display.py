@@ -253,20 +253,16 @@ class EnergyDisplayPanel(QWidget):
     
     def _on_channel_toggled(self, channel: str, state: int) -> None:
         """Handle channel checkbox toggle."""
-        self._channel_enabled[channel] = (state == Qt.Checked)
+        self._channel_enabled[channel] = (state == 2)  # Qt.CheckState.Checked = 2
         self._update_display()
     
     def _on_log_scale_changed(self, state: int) -> None:
         """Handle log scale checkbox change."""
-        self._log_mode = (state == Qt.Checked)
+        self._log_mode = (state == 2)  # Qt.CheckState.Checked = 2
         
         # Use native PyQtGraph log mode
         plot_item = self.plot_widget.getPlotItem()
         plot_item.setLogMode(y=self._log_mode)
-        
-        # Debug output
-        print(f"[Energy Display] Log mode changed to: {self._log_mode}")
-        print(f"[Energy Display] PlotItem log mode state: x={plot_item.ctrl.logXCheck.isChecked()}, y={plot_item.ctrl.logYCheck.isChecked()}")
         
         # Trigger a full redraw with updated log mode
         self._update_display()
@@ -350,7 +346,6 @@ class EnergyDisplayPanel(QWidget):
             # For log mode, replace zeros with small value to avoid log(0) issues
             if self._log_mode:
                 plot_counts = np.where(plot_counts > 0, plot_counts, 0.5)
-                print(f"[Energy Display] Channel {channel}: Log mode active, count range: {np.min(plot_counts):.2f} to {np.max(plot_counts):.2f}")
             
             # For stepMode=True, use bin_edges (N+1) for X and counts (N) for Y
             color = CHANNEL_COLORS[channel]

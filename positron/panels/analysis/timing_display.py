@@ -343,15 +343,11 @@ class TimingDisplayPanel(QWidget):
     
     def _on_log_scale_changed(self, state: int) -> None:
         """Handle log scale checkbox change."""
-        self._log_scale = (state == Qt.Checked)
+        self._log_scale = (state == 2)  # Qt.CheckState.Checked = 2
         
         # Use native PyQtGraph log mode
         plot_item = self.plot_widget.getPlotItem()
         plot_item.setLogMode(y=self._log_scale)
-        
-        # Debug output
-        print(f"[Timing Display] Log mode changed to: {self._log_scale}")
-        print(f"[Timing Display] PlotItem log mode state: x={plot_item.ctrl.logXCheck.isChecked()}, y={plot_item.ctrl.logYCheck.isChecked()}")
         
         # Clear all plots first to ensure clean redraw with new mode
         for i in range(4):
