@@ -77,6 +77,7 @@ class TimebaseInfo:
     total_samples: int
     pre_trigger_samples: int
     post_trigger_samples: int
+    voltage_range_code: int  # PS3000A_RANGE code used for channels
 
 
 class PS3000aConfigurator:
@@ -105,6 +106,7 @@ class PS3000aConfigurator:
         
         # Configuration state
         self._timebase_info: TimebaseInfo | None = None
+        self._voltage_range_code: int | None = None
     
     def apply_configuration(self) -> None:
         """Apply all hardware configuration settings."""
@@ -117,7 +119,7 @@ class PS3000aConfigurator:
     def _configure_channels(self) -> None:
         """Configure all 4 analog channels with hardcoded settings."""
         # Get the range enum value for 100mV
-        voltage_range = self.ps.PS3000A_RANGE['PS3000A_100MV']
+        self._voltage_range_code = self.ps.PS3000A_RANGE['PS3000A_100MV']
         coupling = self.ps.PS3000A_COUPLING['PS3000A_DC']
         analog_offset = 0.0
         
@@ -129,7 +131,7 @@ class PS3000aConfigurator:
                 channel_idx,  # channel
                 1,  # enabled
                 coupling,  # DC coupling
-                voltage_range,  # 100mV range
+                self._voltage_range_code,  # 100mV range
                 analog_offset  # 0V offset
             )
             
@@ -200,7 +202,8 @@ class PS3000aConfigurator:
                         sample_rate_hz=sample_rate_hz,
                         total_samples=total_samples_needed,
                         pre_trigger_samples=pre_trigger_samples,
-                        post_trigger_samples=post_trigger_samples
+                        post_trigger_samples=post_trigger_samples,
+                        voltage_range_code=self._voltage_range_code
                     )
                     return
                 else:
@@ -241,6 +244,20 @@ class PS3000aConfigurator:
         if self._timebase_info is None:
             raise RuntimeError("Timebase not configured. Call apply_configuration() first.")
         return self._timebase_info
+    
+    def get_voltage_range_code(self) -> int:
+        """
+        Get the voltage range code used for channel configuration.
+        
+        Returns:
+            Voltage range code (e.g., 3 for PS3000A_100MV)
+            
+        Raises:
+            RuntimeError: If channels not yet configured
+        """
+        if self._voltage_range_code is None:
+            raise RuntimeError("Channels not configured. Call apply_configuration() first.")
+        return self._voltage_range_code
 
 
 class PS6000aConfigurator:

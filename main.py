@@ -101,10 +101,12 @@ def main():
             # Store achieved values in config
             sample_rate = configurator.get_actual_sample_rate()
             total_samples, pre_samples = configurator.get_sample_counts()
+            voltage_range_code = configurator.get_voltage_range_code()
             
             positron_app.config.scope.sample_rate = sample_rate
             positron_app.config.scope.waveform_length = total_samples
             positron_app.config.scope.pre_trigger_samples = pre_samples
+            positron_app.config.scope.voltage_range_code = voltage_range_code
             positron_app.save_config()
             
             # Get detailed timebase info for display

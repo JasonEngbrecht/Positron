@@ -71,7 +71,7 @@ class PS3000aAcquisitionEngine(QThread):
         sample_count: int = 375,
         pre_trigger_samples: int = 125,
         sample_interval_ns: float = 8.0,
-        voltage_range_code: int = 7,  # 100 mV range
+        voltage_range_code: int = 3,  # Should match channel configuration (3 = PS3000A_100MV)
         max_adc: int = 32512,
         cfd_fraction: float = 0.5
     ):
@@ -85,7 +85,7 @@ class PS3000aAcquisitionEngine(QThread):
             sample_count: Total samples per capture
             pre_trigger_samples: Number of pre-trigger samples
             sample_interval_ns: Sample interval in nanoseconds
-            voltage_range_code: PicoScope voltage range code (7 = 100 mV)
+            voltage_range_code: PicoScope voltage range code (MUST match channel config: 3 = PS3000A_100MV)
             max_adc: Maximum ADC count for voltage conversion
             cfd_fraction: Constant fraction for CFD timing (0-1)
         """
@@ -503,7 +503,7 @@ def create_acquisition_engine(
         sample_count: Total samples per capture
         pre_trigger_samples: Number of pre-trigger samples
         sample_interval_ns: Sample interval in nanoseconds
-        voltage_range_code: Voltage range code (default: 7 = 100 mV)
+        voltage_range_code: Voltage range code (MUST match channel config from configurator)
         max_adc: Maximum ADC count (uses scope_info.max_adc if None)
         cfd_fraction: Constant fraction for CFD timing (default: 0.5)
     

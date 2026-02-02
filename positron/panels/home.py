@@ -471,7 +471,7 @@ class HomePanel(QWidget):
             sample_count=config.scope.waveform_length,
             pre_trigger_samples=config.scope.pre_trigger_samples,
             sample_interval_ns=sample_interval_ns,
-            voltage_range_code=7,  # 100 mV
+            voltage_range_code=config.scope.voltage_range_code,
             max_adc=scope_info.max_adc,
             cfd_fraction=config.cfd_fraction
         )
