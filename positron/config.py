@@ -4,8 +4,60 @@ Configuration management for scope settings and application defaults.
 
 from dataclasses import dataclass, field
 from typing import Optional, Dict, Any, List
+from datetime import datetime
 import json
 from pathlib import Path
+
+
+@dataclass
+class ChannelCalibration:
+    """
+    Energy calibration parameters for a single channel.
+    
+    Two-point linear calibration:
+    calibrated_energy_keV = gain * raw_energy_mV_ns + offset
+    """
+    gain: float = 1.0  # keV per mV·ns
+    offset: float = 0.0  # keV
+    calibrated: bool = False  # Whether this channel has been calibrated
+    calibration_date: Optional[str] = None  # ISO format timestamp
+    peak_1_raw: Optional[float] = None  # 511 keV peak raw value (mV·ns)
+    peak_2_raw: Optional[float] = None  # 1275 keV peak raw value (mV·ns)
+    
+    def to_dict(self) -> Dict[str, Any]:
+        """Convert to dictionary for serialization."""
+        return {
+            "gain": self.gain,
+            "offset": self.offset,
+            "calibrated": self.calibrated,
+            "calibration_date": self.calibration_date,
+            "peak_1_raw": self.peak_1_raw,
+            "peak_2_raw": self.peak_2_raw,
+        }
+    
+    @classmethod
+    def from_dict(cls, data: Dict[str, Any]) -> "ChannelCalibration":
+        """Create from dictionary."""
+        return cls(
+            gain=data.get("gain", 1.0),
+            offset=data.get("offset", 0.0),
+            calibrated=data.get("calibrated", False),
+            calibration_date=data.get("calibration_date"),
+            peak_1_raw=data.get("peak_1_raw"),
+            peak_2_raw=data.get("peak_2_raw"),
+        )
+    
+    def apply_calibration(self, raw_energy: float) -> float:
+        """
+        Apply calibration to convert raw energy to keV.
+        
+        Args:
+            raw_energy: Raw energy in mV·ns
+            
+        Returns:
+            Calibrated energy in keV
+        """
+        return self.gain * raw_energy + self.offset
 
 
 @dataclass
@@ -128,6 +180,12 @@ class ScopeConfig:
     # Trigger configuration
     trigger: TriggerConfig = field(default_factory=TriggerConfig.create_default)
     
+    # Energy calibration (Phase 4)
+    calibration_a: ChannelCalibration = field(default_factory=ChannelCalibration)
+    calibration_b: ChannelCalibration = field(default_factory=ChannelCalibration)
+    calibration_c: ChannelCalibration = field(default_factory=ChannelCalibration)
+    calibration_d: ChannelCalibration = field(default_factory=ChannelCalibration)
+    
     def to_dict(self) -> Dict[str, Any]:
         """Convert configuration to dictionary for serialization."""
         return {
@@ -138,6 +196,10 @@ class ScopeConfig:
             "pre_trigger_samples": self.pre_trigger_samples,
             "sample_rate": self.sample_rate,
             "trigger": self.trigger.to_dict(),
+            "calibration_a": self.calibration_a.to_dict(),
+            "calibration_b": self.calibration_b.to_dict(),
+            "calibration_c": self.calibration_c.to_dict(),
+            "calibration_d": self.calibration_d.to_dict(),
         }
     
     @classmethod
@@ -155,7 +217,42 @@ class ScopeConfig:
         if "trigger" in data:
             scope_config.trigger = TriggerConfig.from_dict(data["trigger"])
         
+        # Handle calibration configs
+        if "calibration_a" in data:
+            scope_config.calibration_a = ChannelCalibration.from_dict(data["calibration_a"])
+        if "calibration_b" in data:
+            scope_config.calibration_b = ChannelCalibration.from_dict(data["calibration_b"])
+        if "calibration_c" in data:
+            scope_config.calibration_c = ChannelCalibration.from_dict(data["calibration_c"])
+        if "calibration_d" in data:
+            scope_config.calibration_d = ChannelCalibration.from_dict(data["calibration_d"])
+        
         return scope_config
+    
+    def get_calibration(self, channel: str) -> ChannelCalibration:
+        """
+        Get calibration for a specific channel.
+        
+        Args:
+            channel: Channel name ('A', 'B', 'C', or 'D')
+            
+        Returns:
+            ChannelCalibration for the specified channel
+            
+        Raises:
+            ValueError: If channel name is invalid
+        """
+        channel = channel.upper()
+        if channel == 'A':
+            return self.calibration_a
+        elif channel == 'B':
+            return self.calibration_b
+        elif channel == 'C':
+            return self.calibration_c
+        elif channel == 'D':
+            return self.calibration_d
+        else:
+            raise ValueError(f"Invalid channel: {channel}. Must be A, B, C, or D.")
 
 
 @dataclass

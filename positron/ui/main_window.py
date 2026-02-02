@@ -11,6 +11,7 @@ from PySide6.QtCore import Qt
 
 from positron.app import PositronApp
 from positron.panels.home import HomePanel
+from positron.panels.calibration import CalibrationPanel
 
 
 class MainWindow(QMainWindow):
@@ -70,8 +71,11 @@ class MainWindow(QMainWindow):
         self.home_panel = HomePanel(self.app)
         self.tabs.addTab(self.home_panel, "Home")
         
-        # Future panels will be added here:
-        # - Calibration panel (Phase 4)
+        # Calibration panel (Phase 4)
+        self.calibration_panel = CalibrationPanel(self.app)
+        self.tabs.addTab(self.calibration_panel, "Calibration")
+        
+        # Future panels:
         # - Analysis panels (Phase 5)
     
     def _setup_menubar(self) -> None:

@@ -17,7 +17,7 @@ from typing import Optional, Any
 from PySide6.QtWidgets import QApplication
 from PySide6.QtCore import QObject, Signal
 
-from positron.config import AppConfig
+from positron.config import AppConfig, ChannelCalibration
 from positron.scope.connection import ScopeInfo
 from positron.processing.events import EventStorage, get_event_storage
 
@@ -111,6 +111,18 @@ class PositronApp(QObject):
     def get_config(self) -> AppConfig:
         """Get the current application configuration."""
         return self.config
+    
+    def get_channel_calibration(self, channel: str) -> ChannelCalibration:
+        """
+        Get calibration for a specific channel.
+        
+        Args:
+            channel: Channel name ('A', 'B', 'C', or 'D')
+            
+        Returns:
+            ChannelCalibration for the specified channel
+        """
+        return self.config.scope.get_calibration(channel)
     
     def set_scope_connected(self, connected: bool, handle: Optional[Any] = None) -> None:
         """

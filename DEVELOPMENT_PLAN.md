@@ -469,30 +469,195 @@ Per user request, save functionality will be implemented after pulse analysis in
 
 ---
 
-## Phase 4: Calibration Panel
+## Phase 4: Calibration Panel ✅ COMPLETE
 
 **Goal**: Implement energy calibration using Na-22 source.
 
-### 4.1 Calibration UI
-- Create calibration panel tab
-- Display energy histogram for calibration data
-- Allow channel selection for calibration
+**Status**: Fully implemented for PS3000a series. Independent per-channel calibration with persistent storage in config.json. Efficient single-acquisition workflow using Home panel infrastructure.
 
-### 4.2 Peak Identification
-- Display histogram of uncalibrated energy values
-- Allow user to identify 511 keV and 1275 keV peaks
-- Support peak selection via UI interaction (click or region selection)
+### 4.1 Calibration UI ✅
+**Files**: `positron/panels/calibration.py`, `positron/ui/histogram_plot.py`
 
-### 4.3 Calibration Calculation
-- Perform two-point linear calibration (gain and offset)
-- Apply calibration to convert raw energy to keV
-- Store calibration parameters per channel
+**Implemented**:
+- Calibration panel as Tab 2 in main window
+- **Tabbed interface** with separate view for each channel (A | B | C | D)
+- Calibration status display per channel (calibrated/uncalibrated with date)
+- Interactive energy histogram with PyQtGraph per channel
+- Adjustable binning (20-2000 bins, default: 1000)
+- **Logarithmic y-axis by default** (optimal for gamma spectroscopy)
+- Periodic event count updates (every 2 seconds while tab visible)
 
-### 4.4 Calibration Save Features
-- Save calibration parameters
-- Load previously saved calibration (if needed)
+**Architecture Decision - Reuse Home Panel Acquisition**:
+- **Removed duplicate acquisition controls** from Calibration panel
+- Users acquire data once in Home panel with trigger: (A OR B OR C OR D)
+- Calibration panel reads from global EventStorage
+- "Update All Histograms" button loads data for all 4 channels
+- ~120 lines of code removed, cleaner separation of concerns
 
-**Deliverable**: Working energy calibration workflow using Na-22 two-point calibration.
+### 4.2 Peak Identification ✅
+**Files**: `positron/calibration/energy.py`, `positron/ui/histogram_plot.py`
+
+**Implemented**:
+- Histogram of raw energy values (mV·ns) per channel
+- Two selectable regions using `LinearRegionItem`:
+  - Region 1 (green): For 511 keV peak
+  - Region 2 (blue): For 1275 keV peak
+- Draggable region boundaries with live feedback
+- Auto-position regions heuristic (initial placement)
+- **Weighted mean peak finding algorithm**:
+  - Calculates center-of-mass of histogram in selected region
+  - Uses 100 bins within region for robust calculation
+  - Fast and accurate for 2-point calibration
+  - Independent of display binning
+
+**Peak Finding Technical Details**:
+- Filters data to selected region only
+- Creates 100-bin histogram spanning the region
+- Computes weighted average (bin_center × counts)
+- Returns peak center in raw energy units (mV·ns)
+
+### 4.3 Calibration Calculation ✅
+**Files**: `positron/calibration/energy.py`, `positron/config.py`
+
+**Implemented**:
+- Two-point linear calibration: `E_keV = gain * E_raw + offset`
+- Automatic calculation from identified peaks:
+  - `gain = (1275 - 511) / (peak_2_raw - peak_1_raw)`
+  - `offset = 511 - gain * peak_1_raw`
+- Validation checks:
+  - Minimum event count (100+, recommend 1000+)
+  - Peak separation (>10%)
+  - Reasonable gain range (0.001 to 1000 keV per mV·ns)
+  - Peak ratio check (1.5-4.0, expected ~2.5 for Na-22)
+- Calibration summary display with verification
+- **Independent calibration per channel** with individual Apply buttons
+
+### 4.4 Calibration Persistence ✅
+**Files**: `positron/config.py`, `positron/app.py`
+
+**Implemented**:
+- `ChannelCalibration` dataclass with:
+  - gain, offset, calibrated flag
+  - calibration_date (ISO format)
+  - peak_1_raw, peak_2_raw (for reference)
+  - `apply_calibration()` method
+- Storage in `ScopeConfig` (4 independent calibrations: A, B, C, D)
+- JSON serialization/deserialization
+- Automatic load on application startup
+- Save on calibration apply (per channel)
+- `get_calibration(channel)` convenience method in app and config
+
+### 4.5 Calibration Workflow ✅
+**Files**: `positron/panels/calibration.py`, `positron/ui/main_window.py`
+
+**Optimized Workflow** (Single Acquisition for All Channels):
+
+**Step 1: Configure Trigger (Home Panel)**
+1. Open Home panel
+2. Click "Configure Trigger"
+3. Set up OR logic for all channels:
+   - Condition 1: Channel A (enabled)
+   - Condition 2: Channel B (enabled)
+   - Condition 3: Channel C (enabled)
+   - Condition 4: Channel D (enabled)
+4. This creates A OR B OR C OR D trigger logic
+
+**Step 2: Acquire Data (Home Panel)**
+1. Place Na-22 source near all 4 detectors
+2. Click "Start" in Home panel
+3. Collect 1000+ events (use auto-stop if desired)
+4. Click "Pause" or "Stop"
+
+**Step 3: Calibrate Each Channel (Calibration Panel)**
+1. Switch to Calibration tab
+2. Click "Update All Histograms" (populates all 4 channel tabs)
+3. For each channel tab (A, B, C, D):
+   - View histogram
+   - Drag green region over 511 keV peak
+   - Drag blue region over 1275 keV peak
+   - Click "Find Peaks from Regions" → calculates peak centers
+   - Click "Calculate Calibration" → computes gain/offset with validation
+   - Review summary
+   - Click "Apply Calibration" → saves to config.json
+4. All 4 channels calibrated from single acquisition!
+
+**UI Features**:
+- Event count display with live updates (every 2 seconds)
+- Clear Storage button (clears EventStorage for fresh acquisition)
+- Per-channel status indicators
+- Individual Find Peaks, Calculate, and Apply buttons per channel
+- Status text area per channel showing results and errors
+
+### Phase 4 Summary
+
+**Completed Components**:
+- ✅ Interactive histogram widget with region selection
+- ✅ Tabbed interface for simultaneous 4-channel workflow
+- ✅ Weighted mean peak finding algorithm (100 bins in region)
+- ✅ Two-point linear calibration calculation
+- ✅ Independent per-channel calibration (A, B, C, D)
+- ✅ Persistent storage in config.json
+- ✅ Integration with Home panel acquisition (no duplicate code)
+- ✅ Validation and comprehensive error handling
+- ✅ Calibration status display per channel with dates
+- ✅ Logarithmic y-axis default (gamma spectroscopy standard)
+- ✅ 1000-bin histograms for fine resolution
+- ✅ Periodic event count updates while tab visible
+
+**Tested**: Code compiles cleanly with no linter errors. Ready for hardware testing with PS3000a and Na-22 source.
+
+**Data Structures**:
+- `ChannelCalibration`: gain, offset, calibrated, date, peak values
+- `ChannelPulse`: Extended with `energy_kev` field (Optional[float])
+- All 4 channels stored independently in `ScopeConfig`
+
+**Algorithms**:
+- **Peak Finding**: Weighted mean (center-of-mass) method
+  - Filters data to selected region
+  - Creates 100-bin histogram within region
+  - Computes weighted average for robust peak center
+  - No external dependencies beyond NumPy
+  - Accuracy: Sufficient for 2-point calibration
+- **Calibration**: Two-point linear fit
+  - Standard physics approach for detector calibration
+  - Gain (keV per mV·ns) and offset (keV)
+
+**Architecture Highlights**:
+- **Clean separation**: Home panel = Acquisition, Calibration panel = Analysis
+- **No code duplication**: Single acquisition engine, reused infrastructure
+- **Efficient workflow**: Single acquisition serves all 4 channels
+- **Flexible**: Can pause, check histograms, resume if needed
+- **Consistent**: Uses existing Home panel features (auto-stop, statistics, etc.)
+
+**Series Support**:
+- ✅ PS3000a: Full implementation (series-agnostic calibration logic)
+- ⏳ PS6000a: Will work when acquisition engine implemented (Phase 2 task)
+
+**File Statistics**:
+- Files created: 3 (energy.py, histogram_plot.py, calibration.py)
+- Files modified: 4 (config.py, pulse.py, main_window.py, app.py)
+- Net code: ~1000 lines added for complete calibration system
+- Final calibration.py: ~680 lines (after removing acquisition duplicate)
+
+**User Experience Improvements** (implemented during Phase 4):
+- Multi-channel tabbed interface (vs sequential single-channel)
+- Reuse Home panel acquisition (vs duplicate controls)
+- 1000 bins default (vs 100, for better resolution)
+- Log scale default (vs linear, standard for spectroscopy)
+- Periodic event count updates (vs static display)
+- showEvent/hideEvent optimization (updates only when visible)
+
+**Future Enhancements** (Out of Scope for Phase 4):
+- Gaussian peak fitting for higher accuracy
+- Automatic peak detection (no manual region selection)
+- Multi-point calibration (>2 peaks)
+- Energy resolution (FWHM) calculation
+- Calibration verification mode
+- Live calibrated energy display in Home panel
+- Apply All button (apply all 4 channels at once)
+- Visual indicators on tabs (green dot if calibrated)
+
+**Deliverable**: ✅ Complete, efficient energy calibration workflow using Na-22 two-point calibration. Single acquisition serves all channels. Persistent storage. Ready for Phase 5 analysis panels.
 
 ---
 

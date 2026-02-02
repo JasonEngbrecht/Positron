@@ -17,6 +17,7 @@ class ChannelPulse:
     energy: float     # Integrated signal (arbitrary units, positive)
     peak_mv: float    # Peak amplitude for diagnostics
     has_pulse: bool   # Whether a valid pulse was detected
+    energy_kev: Optional[float] = None  # Calibrated energy in keV (None if not calibrated)
 
 
 @dataclass
