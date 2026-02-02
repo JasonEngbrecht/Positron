@@ -54,6 +54,7 @@ class PositronApp(QObject):
         self._scope_connected = False
         self._scope_handle = None
         self._scope_info: Optional[ScopeInfo] = None
+        self._acquisition_state = "stopped"  # "stopped", "running", "paused"
         
         # Initialize global event storage
         self._event_storage = get_event_storage(max_capacity=self.config.max_events)
@@ -72,6 +73,21 @@ class PositronApp(QObject):
     def event_storage(self) -> EventStorage:
         """Get the global event storage instance."""
         return self._event_storage
+    
+    @property
+    def acquisition_state(self) -> str:
+        """Get the current acquisition state ('stopped', 'running', or 'paused')."""
+        return self._acquisition_state
+    
+    def set_acquisition_state(self, state: str) -> None:
+        """
+        Set the acquisition state.
+        
+        Args:
+            state: New acquisition state ('stopped', 'running', or 'paused')
+        """
+        if state in ("stopped", "running", "paused"):
+            self._acquisition_state = state
     
     def connect_scope(self, scope_info: ScopeInfo) -> None:
         """

@@ -10,11 +10,14 @@ Shows up to 4 timing difference histograms on a single plot with:
 
 import numpy as np
 from typing import Dict, List, Optional, Tuple
+import csv
+from datetime import datetime
+from pathlib import Path
 
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QGridLayout, QGroupBox,
     QLabel, QCheckBox, QRadioButton, QComboBox, QDoubleSpinBox,
-    QSpinBox, QPushButton, QSizePolicy
+    QSpinBox, QPushButton, QSizePolicy, QFileDialog, QMessageBox
 )
 from PySide6.QtCore import Qt, QTimer, Signal
 from PySide6.QtGui import QFont, QColor
@@ -192,6 +195,9 @@ class TimingDisplayPanel(QWidget):
         self._manual_max_time = 100.0
         self._log_scale = False
         
+        # Store current histogram data for saving (plot_index -> (bin_centers, counts, config))
+        self._current_histogram_data: Dict[int, Tuple[np.ndarray, np.ndarray, Dict]] = {}
+        
         # Setup UI
         self._setup_ui()
         
@@ -199,6 +205,12 @@ class TimingDisplayPanel(QWidget):
         self._update_timer = QTimer()
         self._update_timer.timeout.connect(self._update_display)
         self._update_timer.setInterval(2000)  # 2 seconds
+        
+        # Connect to acquisition state signals to enable/disable save button
+        self.app.acquisition_paused.connect(self._update_save_button_state)
+        self.app.acquisition_stopped.connect(self._update_save_button_state)
+        self.app.acquisition_started.connect(self._update_save_button_state)
+        self.app.acquisition_resumed.connect(self._update_save_button_state)
     
     def _setup_ui(self) -> None:
         """Create and layout all UI elements."""
@@ -332,6 +344,18 @@ class TimingDisplayPanel(QWidget):
         # Enable/disable manual controls based on mode
         self._enable_manual_controls(False)
         
+        # Save button
+        save_layout = QHBoxLayout()
+        self.save_button = QPushButton("Save Histogram")
+        self.save_button.clicked.connect(self._save_histogram)
+        self.save_button.setStyleSheet("QPushButton { font-weight: bold; }")
+        save_layout.addWidget(self.save_button)
+        save_layout.addStretch()
+        layout.addLayout(save_layout)
+        
+        # Initial save button state
+        self._update_save_button_state()
+        
         group.setLayout(layout)
         return group
     
@@ -375,15 +399,20 @@ class TimingDisplayPanel(QWidget):
         
         if event_count == 0:
             self.status_label.setText("No events in storage. Acquire data in Home panel first.")
+            self._current_histogram_data = {}
             for i, plot in enumerate(self.timing_plots):
                 plot.set_status("No data")
                 # Clear old plot items
                 if self._plot_items[i] is not None:
                     self.plot_widget.removeItem(self._plot_items[i])
                     self._plot_items[i] = None
+            self._update_save_button_state()
             return
         
         events = self.app.event_storage.get_all_events()
+        
+        # Clear histogram data
+        self._current_histogram_data = {}
         
         # Get binning parameters
         if self._binning_mode == 'automatic':
@@ -449,6 +478,10 @@ class TimingDisplayPanel(QWidget):
             
             counts, bin_edges = np.histogram(time_diffs, bins=num_bins, range=hist_range)
             
+            # Store histogram data for saving (bin centers and original counts)
+            bin_centers = (bin_edges[:-1] + bin_edges[1:]) / 2
+            self._current_histogram_data[i] = (bin_centers, counts, config)
+            
             # Use original count values (setLogMode handles the log display)
             plot_counts = counts.astype(float)
             
@@ -478,6 +511,104 @@ class TimingDisplayPanel(QWidget):
         
         # Update status
         self.status_label.setText(" | ".join(status_parts) + f" | Active: {active_plots}/4")
+        
+        # Update save button state
+        self._update_save_button_state()
+    
+    def _update_save_button_state(self) -> None:
+        """Update the save button enabled state based on acquisition state."""
+        # Save button is only enabled when acquisition is paused or stopped
+        is_paused_or_stopped = self.app.acquisition_state in ("paused", "stopped")
+        has_data = len(self._current_histogram_data) > 0
+        self.save_button.setEnabled(is_paused_or_stopped and has_data)
+    
+    def _save_histogram(self) -> None:
+        """Save the current histogram data to CSV file."""
+        if len(self._current_histogram_data) == 0:
+            QMessageBox.warning(
+                self,
+                "No Data",
+                "No histogram data available to save. Please configure and update plots first."
+            )
+            return
+        
+        # Open file dialog
+        default_filename = f"timing_histogram_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv"
+        file_path, _ = QFileDialog.getSaveFileName(
+            self,
+            "Save Timing Histogram",
+            default_filename,
+            "CSV Files (*.csv);;All Files (*)"
+        )
+        
+        if not file_path:
+            return  # User cancelled
+        
+        try:
+            with open(file_path, 'w', newline='') as f:
+                writer = csv.writer(f)
+                
+                # Write metadata as comments
+                writer.writerow(['# Timing Display - Saved: ' + datetime.now().strftime('%Y-%m-%d %H:%M:%S')])
+                writer.writerow([f'# Total Events: {self.app.event_storage.get_count():,}'])
+                
+                # Binning information
+                if self._binning_mode == 'automatic':
+                    writer.writerow([f'# Binning: Automatic, 1000 bins'])
+                else:
+                    writer.writerow([f'# Binning: Manual, {self.bins_spin.value()} bins, {self.min_time_spin.value()}-{self.max_time_spin.value()} ns'])
+                
+                # Plot information
+                for plot_idx in sorted(self._current_histogram_data.keys()):
+                    bin_centers, counts, config = self._current_histogram_data[plot_idx]
+                    num_events = len(counts[counts > 0]) if len(counts) > 0 else np.sum(counts)
+                    writer.writerow([
+                        f"# Plot{plot_idx+1}: {config['stop_channel']}-{config['start_channel']}, "
+                        f"Energy filters: {config['start_channel']}({config['start_energy_min']:.0f}-{config['start_energy_max']:.0f} keV), "
+                        f"{config['stop_channel']}({config['stop_energy_min']:.0f}-{config['stop_energy_max']:.0f} keV), "
+                        f"Events: {int(np.sum(counts))}"
+                    ])
+                
+                writer.writerow([])  # Blank line
+                
+                # Prepare column headers and data
+                headers = ['Time_Difference_ns']
+                
+                # Get all plots that have data
+                plot_indices = sorted(self._current_histogram_data.keys())
+                
+                for plot_idx in plot_indices:
+                    headers.append(f'Plot{plot_idx+1}_Counts')
+                
+                # Write headers
+                writer.writerow(headers)
+                
+                # Write data rows
+                if self._current_histogram_data:
+                    # Get bin centers from first plot (all should have same binning)
+                    first_plot_idx = plot_indices[0]
+                    bin_centers = self._current_histogram_data[first_plot_idx][0]
+                    num_rows = len(bin_centers)
+                    
+                    for i in range(num_rows):
+                        row = [f"{bin_centers[i]:.2f}"]  # Time difference
+                        for plot_idx in plot_indices:
+                            _, counts, _ = self._current_histogram_data[plot_idx]
+                            row.append(f"{int(counts[i])}")
+                        writer.writerow(row)
+            
+            QMessageBox.information(
+                self,
+                "Save Successful",
+                f"Histogram data saved successfully to:\n{file_path}"
+            )
+            
+        except Exception as e:
+            QMessageBox.critical(
+                self,
+                "Save Failed",
+                f"Failed to save histogram data:\n{str(e)}"
+            )
     
     def showEvent(self, event):
         """Override showEvent to start auto-update when panel becomes visible."""

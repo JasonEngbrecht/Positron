@@ -10,12 +10,15 @@ Main control interface with:
 """
 
 import time
+import csv
+from datetime import datetime
 from typing import Optional
+from pathlib import Path
 
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QGridLayout,
     QPushButton, QLabel, QCheckBox, QSpinBox, QGroupBox,
-    QSizePolicy
+    QSizePolicy, QFileDialog, QMessageBox
 )
 from PySide6.QtCore import Qt, QTimer, Signal
 from PySide6.QtGui import QFont
@@ -175,6 +178,14 @@ class HomePanel(QWidget):
         self.restart_btn.clicked.connect(self._on_restart_clicked)
         self.restart_btn.setEnabled(False)
         layout.addWidget(self.restart_btn)
+        
+        # Save button
+        self.save_btn = QPushButton("Save Data...")
+        self.save_btn.setMinimumHeight(40)
+        self.save_btn.setStyleSheet("QPushButton { font-size: 14pt; }")
+        self.save_btn.clicked.connect(self._on_save_clicked)
+        self.save_btn.setEnabled(False)
+        layout.addWidget(self.save_btn)
         
         group.setLayout(layout)
         return group
@@ -375,6 +386,183 @@ class HomePanel(QWidget):
         elif self._state == "stopped":
             self._start_acquisition()
     
+    def _on_save_clicked(self) -> None:
+        """Handle save button click - export data to CSV."""
+        # Check if there's any data to save
+        event_count = self.app.event_storage.get_count()
+        if event_count == 0:
+            QMessageBox.warning(
+                self,
+                "No Data",
+                "There is no data to save. Please acquire some events first."
+            )
+            return
+        
+        # Generate default filename with timestamp
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        default_filename = f"positron_data_{timestamp}.csv"
+        
+        # Show save dialog
+        filepath, _ = QFileDialog.getSaveFileName(
+            self,
+            "Save Data to CSV",
+            default_filename,
+            "CSV Files (*.csv);;All Files (*)"
+        )
+        
+        if not filepath:
+            # User cancelled
+            return
+        
+        # Ensure .csv extension
+        if not filepath.lower().endswith('.csv'):
+            filepath += '.csv'
+        
+        # Export to CSV
+        try:
+            self._export_to_csv(filepath)
+            QMessageBox.information(
+                self,
+                "Save Successful",
+                f"Successfully saved {event_count:,} events to:\n{filepath}"
+            )
+        except Exception as e:
+            QMessageBox.critical(
+                self,
+                "Save Failed",
+                f"Failed to save data:\n{str(e)}"
+            )
+    
+    def _export_to_csv(self, filepath: str) -> None:
+        """
+        Export event data to CSV file.
+        
+        Args:
+            filepath: Path to save CSV file
+        """
+        # Get all events (thread-safe copy)
+        events = self.app.event_storage.get_all_events()
+        
+        # Get configuration for metadata
+        config = self.app.config
+        scope_info = self.app.scope_info
+        scope_config = config.scope
+        
+        # Open file and write
+        with open(filepath, 'w', newline='', encoding='utf-8') as f:
+            # Write metadata as comments
+            f.write(f"# Positron Data Export\n")
+            f.write(f"# Export Date: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n")
+            f.write(f"#\n")
+            
+            # Scope information
+            f.write(f"# Scope Model: {scope_info.variant}\n")
+            f.write(f"# Serial Number: {scope_info.serial}\n")
+            f.write(f"# Sample Rate: {scope_config.sample_rate / 1e6:.2f} MS/s\n")
+            f.write(f"# Voltage Range: 100 mV (all channels)\n")
+            
+            # Capture window info
+            total_time_us = scope_config.waveform_length / scope_config.sample_rate * 1e6
+            pre_time_us = scope_config.pre_trigger_samples / scope_config.sample_rate * 1e6
+            post_time_us = total_time_us - pre_time_us
+            f.write(f"# Capture Window: {total_time_us:.3f} µs (Pre: {pre_time_us:.3f} µs, Post: {post_time_us:.3f} µs)\n")
+            f.write(f"#\n")
+            
+            # Trigger configuration
+            trigger_config = scope_config.trigger
+            valid_conditions = trigger_config.get_valid_conditions()
+            if valid_conditions:
+                f.write(f"# Trigger Configuration:\n")
+                for i, condition in enumerate(valid_conditions, 1):
+                    channels = " AND ".join(condition.channels)
+                    f.write(f"#   Condition {i}: {channels}\n")
+                if trigger_config.auto_trigger_enabled:
+                    f.write(f"#   Auto-trigger: ON\n")
+                else:
+                    f.write(f"#   Auto-trigger: OFF\n")
+            else:
+                f.write(f"# Trigger Configuration: None\n")
+            f.write(f"#\n")
+            
+            # Calibration information
+            f.write(f"# Calibration Status:\n")
+            calibrations = {
+                'A': scope_config.calibration_a,
+                'B': scope_config.calibration_b,
+                'C': scope_config.calibration_c,
+                'D': scope_config.calibration_d
+            }
+            for ch in ['A', 'B', 'C', 'D']:
+                calib = calibrations[ch]
+                if calib and calib.calibrated:
+                    f.write(f"#   Channel {ch}: Calibrated\n")
+                    f.write(f"#     Gain: {calib.gain:.6e} keV/(mV·ns)\n")
+                    f.write(f"#     Offset: {calib.offset:.6f} keV\n")
+                    if calib.calibration_date:
+                        f.write(f"#     Date: {calib.calibration_date}\n")
+                else:
+                    f.write(f"#   Channel {ch}: Not calibrated\n")
+            f.write(f"#\n")
+            
+            # Acquisition statistics
+            elapsed = self._get_elapsed_time()
+            hours = int(elapsed // 3600)
+            minutes = int((elapsed % 3600) // 60)
+            seconds = int(elapsed % 60)
+            avg_rate = len(events) / elapsed if elapsed > 0 else 0
+            f.write(f"# Acquisition Statistics:\n")
+            f.write(f"#   Total Events: {len(events):,}\n")
+            f.write(f"#   Elapsed Time: {hours:02d}:{minutes:02d}:{seconds:02d}\n")
+            f.write(f"#   Average Rate: {avg_rate:.1f} events/s\n")
+            f.write(f"#\n")
+            
+            # Create CSV writer
+            writer = csv.writer(f)
+            
+            # Write header row
+            header = [
+                'A_has_pulse', 'A_timing_ns', 'A_energy_kev',
+                'B_has_pulse', 'B_timing_ns', 'B_energy_kev',
+                'C_has_pulse', 'C_timing_ns', 'C_energy_kev',
+                'D_has_pulse', 'D_timing_ns', 'D_energy_kev'
+            ]
+            writer.writerow(header)
+            
+            # Write data rows
+            # Create calibration lookup for efficient access
+            calibrations = {
+                'A': scope_config.calibration_a,
+                'B': scope_config.calibration_b,
+                'C': scope_config.calibration_c,
+                'D': scope_config.calibration_d
+            }
+            
+            for event in events:
+                row = []
+                for ch in ['A', 'B', 'C', 'D']:
+                    pulse = event.channels.get(ch)
+                    if pulse:
+                        # Has pulse flag
+                        row.append('TRUE' if pulse.has_pulse else 'FALSE')
+                        
+                        # Timing (always write the value)
+                        row.append(f"{pulse.timing_ns:.6f}")
+                        
+                        # Energy (calibrated if available)
+                        calib = calibrations[ch]
+                        if calib and calib.calibrated:
+                            # Apply calibration
+                            energy_kev = calib.apply_calibration(pulse.energy)
+                            row.append(f"{energy_kev:.6f}")
+                        else:
+                            # Not calibrated - write N/A
+                            row.append('N/A')
+                    else:
+                        # No pulse data for this channel
+                        row.extend(['FALSE', '0.0', 'N/A'])
+                
+                writer.writerow(row)
+    
     def _start_acquisition(self) -> None:
         """Start data acquisition."""
         if not self.app.scope_connected:
@@ -402,8 +590,10 @@ class HomePanel(QWidget):
         self._state = "running"
         self._start_time = time.time()
         self._total_paused_time = 0.0
+        self.app.set_acquisition_state("running")
         self._update_start_pause_button()
         self.restart_btn.setEnabled(False)
+        self.save_btn.setEnabled(False)
         self.configure_trigger_btn.setEnabled(False)
         self.time_limit_check.setEnabled(False)
         self.time_limit_spin.setEnabled(False)
@@ -431,8 +621,10 @@ class HomePanel(QWidget):
         # Update state
         self._state = "paused"
         self._pause_time = time.time()
+        self.app.set_acquisition_state("paused")
         self._update_start_pause_button()
         self.restart_btn.setEnabled(True)
+        self.save_btn.setEnabled(True)
         self.configure_trigger_btn.setEnabled(True)  # Allow trigger changes when paused
         
         # Re-enable preset controls when paused (enable spin boxes regardless of checkbox state)
@@ -455,8 +647,10 @@ class HomePanel(QWidget):
         
         # Update state
         self._state = "running"
+        self.app.set_acquisition_state("running")
         self._update_start_pause_button()
         self.restart_btn.setEnabled(False)
+        self.save_btn.setEnabled(False)
         self.configure_trigger_btn.setEnabled(False)  # Disable trigger changes when running
         
         # Disable preset controls during acquisition
@@ -498,8 +692,10 @@ class HomePanel(QWidget):
         # Update state
         self._state = "paused"  # Go to paused state (not stopped)
         self._pause_time = time.time()
+        self.app.set_acquisition_state("paused")
         self._update_start_pause_button()
         self.restart_btn.setEnabled(True)
+        self.save_btn.setEnabled(True)
         self.configure_trigger_btn.setEnabled(True)
         
         # Re-enable preset controls (enable spin boxes regardless of checkbox state)

@@ -10,11 +10,14 @@ Shows calibrated energy histograms for all 4 channels with:
 
 import numpy as np
 from typing import Dict, Optional, Tuple
+import csv
+from datetime import datetime
+from pathlib import Path
 
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QGridLayout, QGroupBox,
     QLabel, QCheckBox, QRadioButton, QButtonGroup, QDoubleSpinBox,
-    QSpinBox, QPushButton, QSizePolicy
+    QSpinBox, QPushButton, QSizePolicy, QFileDialog, QMessageBox
 )
 from PySide6.QtCore import Qt, QTimer, Signal
 from PySide6.QtGui import QFont
@@ -71,6 +74,9 @@ class EnergyDisplayPanel(QWidget):
         self._manual_max_energy = 2000.0
         self._log_mode = True  # Start with log mode enabled
         
+        # Store current histogram data for saving
+        self._current_histogram_data: Dict[str, Tuple[np.ndarray, np.ndarray]] = {}
+        
         # Setup UI
         self._setup_ui()
         
@@ -78,6 +84,15 @@ class EnergyDisplayPanel(QWidget):
         self._update_timer = QTimer()
         self._update_timer.timeout.connect(self._update_display)
         self._update_timer.setInterval(2000)  # 2 seconds
+        
+        # Connect to acquisition state signals to enable/disable save button
+        self.app.acquisition_paused.connect(self._update_save_button_state)
+        self.app.acquisition_stopped.connect(self._update_save_button_state)
+        self.app.acquisition_started.connect(self._update_save_button_state)
+        self.app.acquisition_resumed.connect(self._update_save_button_state)
+        
+        # Initial save button state
+        self._update_save_button_state()
     
     def _setup_ui(self) -> None:
         """Create and layout all UI elements."""
@@ -222,11 +237,17 @@ class EnergyDisplayPanel(QWidget):
         self.manual_controls_group = manual_group
         layout.addWidget(manual_group)
         
-        # Update button
+        # Update and Save buttons
         button_layout = QHBoxLayout()
         self.update_button = QPushButton("Update Histogram")
         self.update_button.clicked.connect(self._update_display)
         button_layout.addWidget(self.update_button)
+        
+        self.save_button = QPushButton("Save Histogram")
+        self.save_button.clicked.connect(self._save_histogram)
+        self.save_button.setStyleSheet("QPushButton { font-weight: bold; }")
+        button_layout.addWidget(self.save_button)
+        
         button_layout.addStretch()
         layout.addLayout(button_layout)
         
@@ -285,6 +306,7 @@ class EnergyDisplayPanel(QWidget):
         
         if event_count == 0:
             self.status_label.setText("No events in storage. Acquire data in Home panel first.")
+            self._current_histogram_data = {}
             return
         
         events = self.app.event_storage.get_all_events()
@@ -295,11 +317,13 @@ class EnergyDisplayPanel(QWidget):
         # Track event counts per channel
         channel_counts = {}
         
-        # Clear old plot items
+        # Clear old plot items and histogram data
         for channel, plot_item_to_remove in self._plot_items.items():
             if plot_item_to_remove is not None:
                 self.plot_widget.removeItem(plot_item_to_remove)
                 self._plot_items[channel] = None
+        
+        self._current_histogram_data = {}
         
         # Get binning parameters
         if self._binning_mode == 'automatic':
@@ -340,6 +364,10 @@ class EnergyDisplayPanel(QWidget):
             
             counts, bin_edges = np.histogram(energies, bins=num_bins, range=hist_range)
             
+            # Store histogram data for saving (bin centers and original counts)
+            bin_centers = (bin_edges[:-1] + bin_edges[1:]) / 2
+            self._current_histogram_data[channel] = (bin_centers, counts)
+            
             # Use original count values (setLogMode handles the log display)
             plot_counts = counts.astype(float)
             
@@ -370,6 +398,105 @@ class EnergyDisplayPanel(QWidget):
                 status_parts.append(f"Ch {channel}: {channel_counts[channel]:,}")
         
         self.status_label.setText(" | ".join(status_parts))
+        
+        # Update save button state
+        self._update_save_button_state()
+    
+    def _update_save_button_state(self) -> None:
+        """Update the save button enabled state based on acquisition state."""
+        # Save button is only enabled when acquisition is paused or stopped
+        is_paused_or_stopped = self.app.acquisition_state in ("paused", "stopped")
+        has_data = len(self._current_histogram_data) > 0
+        self.save_button.setEnabled(is_paused_or_stopped and has_data)
+    
+    def _save_histogram(self) -> None:
+        """Save the current histogram data to CSV file."""
+        if len(self._current_histogram_data) == 0:
+            QMessageBox.warning(
+                self,
+                "No Data",
+                "No histogram data available to save. Please update the histogram first."
+            )
+            return
+        
+        # Open file dialog
+        default_filename = f"energy_histogram_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv"
+        file_path, _ = QFileDialog.getSaveFileName(
+            self,
+            "Save Energy Histogram",
+            default_filename,
+            "CSV Files (*.csv);;All Files (*)"
+        )
+        
+        if not file_path:
+            return  # User cancelled
+        
+        try:
+            with open(file_path, 'w', newline='') as f:
+                writer = csv.writer(f)
+                
+                # Write metadata as comments
+                writer.writerow(['# Energy Display - Saved: ' + datetime.now().strftime('%Y-%m-%d %H:%M:%S')])
+                writer.writerow([f'# Total Events: {self.app.event_storage.get_count():,}'])
+                
+                # Binning information
+                if self._binning_mode == 'automatic':
+                    writer.writerow([f'# Binning: Automatic, 1000 bins'])
+                else:
+                    writer.writerow([f'# Binning: Manual, {self.bins_spin.value()} bins, {self.min_energy_spin.value()}-{self.max_energy_spin.value()} keV'])
+                
+                # Channel information
+                channels_info = []
+                for channel in ['A', 'B', 'C', 'D']:
+                    if channel in self._current_histogram_data:
+                        channels_info.append(f"{channel} (calibrated)")
+                    else:
+                        info = get_channel_info(self.app, channel)
+                        if info['calibrated']:
+                            channels_info.append(f"{channel} (not enabled)")
+                        else:
+                            channels_info.append(f"{channel} (not calibrated)")
+                
+                writer.writerow(['# Channels: ' + ', '.join(channels_info)])
+                writer.writerow([])  # Blank line
+                
+                # Prepare column headers and data
+                headers = ['Energy_keV']
+                data_columns = []
+                
+                # Get all channels that have data
+                channels_with_data = sorted(self._current_histogram_data.keys())
+                
+                for channel in channels_with_data:
+                    headers.append(f'Channel_{channel}_Counts')
+                    bin_centers, counts = self._current_histogram_data[channel]
+                    data_columns.append((bin_centers, counts))
+                
+                # Write headers
+                writer.writerow(headers)
+                
+                # Write data rows
+                # All channels should have the same number of bins
+                if data_columns:
+                    num_rows = len(data_columns[0][0])
+                    for i in range(num_rows):
+                        row = [f"{data_columns[0][0][i]:.2f}"]  # Energy from first channel
+                        for bin_centers, counts in data_columns:
+                            row.append(f"{int(counts[i])}")
+                        writer.writerow(row)
+            
+            QMessageBox.information(
+                self,
+                "Save Successful",
+                f"Histogram data saved successfully to:\n{file_path}"
+            )
+            
+        except Exception as e:
+            QMessageBox.critical(
+                self,
+                "Save Failed",
+                f"Failed to save histogram data:\n{str(e)}"
+            )
     
     def showEvent(self, event):
         """Override showEvent to start auto-update when panel becomes visible."""
