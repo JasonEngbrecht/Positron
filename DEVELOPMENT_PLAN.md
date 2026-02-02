@@ -28,7 +28,7 @@ pip install PySide6 pyqtgraph numpy picosdk
 | Phase 2 | ✅ Complete | Home Panel & Basic Acquisition |
 | Phase 3 | ✅ Complete | Backend Processing Engine |
 | Phase 4 | ✅ Complete | Calibration Panel |
-| Phase 5 | ⏳ Pending | Analysis Panels Framework |
+| Phase 5 | ✅ Complete | Analysis Panels (Energy & Timing) |
 | Phase 6 | ⏳ Pending | Polish & Packaging |
 
 **Hardware Support**: PS3000a fully implemented and tested (PicoScope 3406D MSO). PS6000a framework in place, needs implementation.
@@ -193,17 +193,69 @@ pip install PySide6 pyqtgraph numpy picosdk
 
 ---
 
-## Phase 5: Analysis Panels Framework ⏳
+## Phase 5: Analysis Panels ✅
 
-**Goal**: Create extensible framework for analysis panels.
+**Goal**: Create analysis panels for visualizing acquired event data.
 
-### Planned Components
+### Completed Components
 
-- Base class/pattern for analysis panels
-- Panel registration system
-- Data access layer with filtering (energy windows, timing windows, coincidence)
-- Initial panels: energy histogram, timing histogram, others TBD
-- Per-panel save functionality
+**Helper Utilities** (`positron/panels/analysis/utils.py`)
+- Data extraction and filtering functions
+- `extract_calibrated_energies()` - Extract calibrated energies for a channel
+- `filter_events_by_energy()` - Filter events by energy window
+- `calculate_timing_differences()` - Calculate timing differences with energy filtering
+- `get_channel_info()` - Get channel status and calibration information
+- Centralized channel color definitions
+
+**Energy Display Panel** (`positron/panels/analysis/energy_display.py`)
+- Multi-channel energy histogram with color-coded overlay (Red=A, Green=B, Blue=C, Orange=D)
+- Individual channel enable/disable checkboxes
+- Only shows calibrated energy in keV (uncalibrated channels disabled)
+- Logarithmic/linear Y-axis toggle (default: logarithmic)
+- Auto-update every 2 seconds when panel is active
+- Binning options:
+  - Automatic: 1000 bins with auto-ranging
+  - Manual: User-defined min/max energy (keV) and number of bins (20-2000)
+- Live event count per channel
+
+**Timing Display Panel** (`positron/panels/analysis/timing_display.py`)
+- Single shared plot showing up to 4 timing difference histograms
+- Color-coded curves: Blue (Slot 1), Orange (Slot 2), Green (Slot 3), Red (Slot 4)
+- User-selectable channel pairs via dropdown (A, B, C, D)
+- Shows time difference: (Channel 1 time - Channel 2 time) in nanoseconds
+- Energy filtering for each channel (min/max keV)
+- Only includes events where both channels have valid pulses within energy windows
+- Validates channel calibration before plotting
+- Auto-update every 2 seconds when panel is active
+- Binning options:
+  - Automatic: 1000 bins with auto-ranging
+  - Manual: User-defined time range (ns) and number of bins (20-2000)
+- Optional logarithmic Y-axis
+- Live event count per slot
+
+**Integration**
+- Both panels added as new tabs in main window
+- Proper package structure and exports
+- Thread-safe access to EventStorage
+- No performance impact on acquisition
+
+### Design Decisions
+
+**Data Access**: Both panels read directly from shared `EventStorage` using thread-safe methods. No data duplication.
+
+**Auto-Update**: Uses Qt `QTimer` with 2-second intervals. Starts on `showEvent()`, stops on `hideEvent()` to save resources.
+
+**Calibration Dependency**: Energy Display requires calibrated channels. Timing Display requires calibrated channels for energy filtering.
+
+**UI Consistency**: Channel colors match waveform display. Histogram binning controls consistent across both panels.
+
+### Future Enhancements
+
+- Additional analysis panels as needed (coincidence rate, 2D histograms, etc.)
+- Data export functionality (CSV, ROOT format)
+- Region-of-interest (ROI) selection and statistics
+- Peak fitting capabilities
+- Advanced coincidence analysis tools
 
 ---
 
@@ -252,6 +304,7 @@ pip install PySide6 pyqtgraph numpy picosdk
 Positron/
 ├── README.md
 ├── DEVELOPMENT_PLAN.md
+├── PHASE5_SUMMARY.md          # Phase 5 implementation details
 ├── requirements.txt
 ├── main.py                    # Application entry point
 ├── positron/
@@ -273,12 +326,13 @@ Positron/
 │   │   └── energy.py          # Energy calibration
 │   ├── panels/
 │   │   ├── __init__.py
-│   │   ├── base.py            # Base panel class
 │   │   ├── home.py            # Home panel
 │   │   ├── calibration.py     # Calibration panel
 │   │   └── analysis/          # Analysis panels (Phase 5)
 │   │       ├── __init__.py
-│   │       └── ...
+│   │       ├── utils.py       # Helper utilities
+│   │       ├── energy_display.py  # Energy histogram panel
+│   │       └── timing_display.py  # Timing difference panel
 │   └── ui/
 │       ├── __init__.py
 │       ├── main_window.py     # Main window with tabs
@@ -296,5 +350,6 @@ Positron/
 
 - **Phase 1-2**: Tested with PicoScope 3406D MSO (PS3000a)
 - **Phase 3**: Unit tests passing with synthetic pulses
-- **Phase 4**: Code compiles cleanly, ready for hardware testing with Na-22 source
+- **Phase 4**: Hardware tested with Na-22 source calibration
+- **Phase 5**: Code compiles cleanly, imports verified, ready for hardware testing with live acquisition
 - **PS6000a**: Framework in place, needs implementation and hardware testing

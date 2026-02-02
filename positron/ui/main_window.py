@@ -12,6 +12,8 @@ from PySide6.QtCore import Qt
 from positron.app import PositronApp
 from positron.panels.home import HomePanel
 from positron.panels.calibration import CalibrationPanel
+from positron.panels.analysis.energy_display import EnergyDisplayPanel
+from positron.panels.analysis.timing_display import TimingDisplayPanel
 
 
 class MainWindow(QMainWindow):
@@ -75,8 +77,13 @@ class MainWindow(QMainWindow):
         self.calibration_panel = CalibrationPanel(self.app)
         self.tabs.addTab(self.calibration_panel, "Calibration")
         
-        # Future panels:
-        # - Analysis panels (Phase 5)
+        # Energy Display panel (Phase 5)
+        self.energy_panel = EnergyDisplayPanel(self.app)
+        self.tabs.addTab(self.energy_panel, "Energy Display")
+        
+        # Timing Display panel (Phase 5)
+        self.timing_panel = TimingDisplayPanel(self.app)
+        self.tabs.addTab(self.timing_panel, "Timing Display")
     
     def _setup_menubar(self) -> None:
         """Create the menu bar."""
