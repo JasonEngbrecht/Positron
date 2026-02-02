@@ -258,10 +258,17 @@ class EnergyDisplayPanel(QWidget):
     
     def _on_log_scale_changed(self, state: int) -> None:
         """Handle log scale checkbox change."""
-        log_mode = (state == Qt.Checked)
-        # Store the state and trigger a full redraw
-        # (Can't just toggle setLogMode with stepMode plots)
-        self._log_mode = log_mode
+        self._log_mode = (state == Qt.Checked)
+        
+        # Use native PyQtGraph log mode
+        plot_item = self.plot_widget.getPlotItem()
+        plot_item.setLogMode(y=self._log_mode)
+        
+        # Debug output
+        print(f"[Energy Display] Log mode changed to: {self._log_mode}")
+        print(f"[Energy Display] PlotItem log mode state: x={plot_item.ctrl.logXCheck.isChecked()}, y={plot_item.ctrl.logYCheck.isChecked()}")
+        
+        # Trigger a full redraw with updated log mode
         self._update_display()
     
     def _on_binning_mode_changed(self, checked: bool) -> None:
@@ -337,11 +344,13 @@ class EnergyDisplayPanel(QWidget):
             
             counts, bin_edges = np.histogram(energies, bins=num_bins, range=hist_range)
             
-            # Transform to log scale if needed
-            plot_counts = counts.copy().astype(float)
+            # Use original count values (setLogMode handles the log display)
+            plot_counts = counts.astype(float)
+            
+            # For log mode, replace zeros with small value to avoid log(0) issues
             if self._log_mode:
-                # Use log10(count + 1) to avoid log(0) and handle zeros naturally
-                plot_counts = np.log10(counts + 1)
+                plot_counts = np.where(plot_counts > 0, plot_counts, 0.5)
+                print(f"[Energy Display] Channel {channel}: Log mode active, count range: {np.min(plot_counts):.2f} to {np.max(plot_counts):.2f}")
             
             # For stepMode=True, use bin_edges (N+1) for X and counts (N) for Y
             color = CHANNEL_COLORS[channel]

@@ -131,12 +131,12 @@ class HistogramPlot(pg.PlotWidget):
         if self._histogram_item is not None:
             self.removeItem(self._histogram_item)
         
-        # Create bar graph
-        # For log scale, we'll set y to log values but display will show log counts
-        y_values = hist.copy()
+        # Use original count values (setLogMode handles the log display)
+        y_values = hist.astype(float)
+        
+        # For log mode, replace zeros with small value to avoid log(0) issues
         if self._log_scale:
-            # Add small value to avoid log(0)
-            y_values = np.log10(hist + 1)
+            y_values = np.where(y_values > 0, y_values, 0.5)
         
         self._histogram_item = pg.BarGraphItem(
             x=bin_centers,
@@ -158,12 +158,16 @@ class HistogramPlot(pg.PlotWidget):
         """
         self._log_scale = enabled
         
-        # Update axis label
+        # Use native PyQtGraph log mode
         plot_item = self.getPlotItem()
-        if enabled:
-            plot_item.setLabel('left', 'Counts (log₁₀)')
-        else:
-            plot_item.setLabel('left', 'Counts')
+        plot_item.setLogMode(y=enabled)
+        
+        # Debug output
+        print(f"[Calibration Histogram] Log mode changed to: {enabled}")
+        print(f"[Calibration Histogram] PlotItem log mode state: x={plot_item.ctrl.logXCheck.isChecked()}, y={plot_item.ctrl.logYCheck.isChecked()}")
+        
+        # Keep axis label as 'Counts' in both modes
+        plot_item.setLabel('left', 'Counts')
         
         # Redraw histogram if data exists
         if self._current_data is not None:

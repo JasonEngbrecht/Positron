@@ -344,11 +344,21 @@ class TimingDisplayPanel(QWidget):
     def _on_log_scale_changed(self, state: int) -> None:
         """Handle log scale checkbox change."""
         self._log_scale = (state == Qt.Checked)
-        # Clear all plots first to avoid issues with log mode transitions
+        
+        # Use native PyQtGraph log mode
+        plot_item = self.plot_widget.getPlotItem()
+        plot_item.setLogMode(y=self._log_scale)
+        
+        # Debug output
+        print(f"[Timing Display] Log mode changed to: {self._log_scale}")
+        print(f"[Timing Display] PlotItem log mode state: x={plot_item.ctrl.logXCheck.isChecked()}, y={plot_item.ctrl.logYCheck.isChecked()}")
+        
+        # Clear all plots first to ensure clean redraw with new mode
         for i in range(4):
             if self._plot_items[i] is not None:
                 self.plot_widget.removeItem(self._plot_items[i])
                 self._plot_items[i] = None
+        
         self._update_display()
     
     def _on_binning_mode_changed(self, checked: bool) -> None:
@@ -443,11 +453,12 @@ class TimingDisplayPanel(QWidget):
             
             counts, bin_edges = np.histogram(time_diffs, bins=num_bins, range=hist_range)
             
-            # Transform to log scale if needed
-            plot_counts = counts.copy().astype(float)
+            # Use original count values (setLogMode handles the log display)
+            plot_counts = counts.astype(float)
+            
+            # For log mode, replace zeros with small value to avoid log(0) issues
             if self._log_scale:
-                # Use log10(count + 1) to avoid log(0) and handle zeros naturally
-                plot_counts = np.log10(counts + 1)
+                plot_counts = np.where(plot_counts > 0, plot_counts, 0.5)
             
             # Plot on shared plot widget
             color = PLOT_COLORS[i]
