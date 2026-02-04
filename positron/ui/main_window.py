@@ -14,6 +14,13 @@ from positron.panels.home import HomePanel
 from positron.panels.calibration import CalibrationPanel
 from positron.panels.analysis.energy_display import EnergyDisplayPanel
 from positron.panels.analysis.timing_display import TimingDisplayPanel
+from positron.ui.help_dialogs import (
+    show_getting_started,
+    show_home_help,
+    show_energy_display_help,
+    show_timing_display_help,
+    show_calibration_help
+)
 
 
 class MainWindow(QMainWindow):
@@ -99,6 +106,28 @@ class MainWindow(QMainWindow):
         
         # Help menu
         help_menu = menubar.addMenu("&Help")
+        
+        # Getting Started
+        getting_started_action = help_menu.addAction("&Getting Started")
+        getting_started_action.setShortcut("F1")
+        getting_started_action.triggered.connect(lambda: show_getting_started(self))
+        
+        help_menu.addSeparator()
+        
+        # Panel-specific help
+        home_help_action = help_menu.addAction("&Home Panel")
+        home_help_action.triggered.connect(lambda: show_home_help(self))
+        
+        energy_help_action = help_menu.addAction("&Energy Display Panel")
+        energy_help_action.triggered.connect(lambda: show_energy_display_help(self))
+        
+        timing_help_action = help_menu.addAction("&Timing Display Panel")
+        timing_help_action.triggered.connect(lambda: show_timing_display_help(self))
+        
+        calibration_help_action = help_menu.addAction("&Calibration Panel")
+        calibration_help_action.triggered.connect(lambda: show_calibration_help(self))
+        
+        help_menu.addSeparator()
         
         # About action
         about_action = help_menu.addAction("&About")
