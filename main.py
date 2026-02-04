@@ -50,7 +50,6 @@ def main():
                 result = msg.exec()
                 
                 if result == QMessageBox.Cancel:
-                    print("User cancelled scope connection. Exiting.")
                     return 0
                 # If Retry, loop will continue
                 
@@ -67,9 +66,6 @@ def main():
                 result = msg.exec()
                 
                 if result == QMessageBox.Cancel:
-                    print(f"Error connecting to scope: {e}")
-                    import traceback
-                    traceback.print_exc()
                     return 1
         
         # Create Positron application instance
@@ -80,7 +76,6 @@ def main():
         
         # Phase 1.3: Apply scope configuration
         try:
-            print("\nApplying scope configuration...")
             configurator = create_configurator(scope_info)
             configurator.apply_configuration()
             
@@ -94,21 +89,6 @@ def main():
             positron_app.config.scope.pre_trigger_samples = pre_samples
             positron_app.config.scope.voltage_range_code = voltage_range_code
             positron_app.save_config()
-            
-            # Get detailed timebase info for display
-            timebase_info = configurator.get_timebase_info()
-            
-            print("Scope configuration applied successfully:")
-            print("  Voltage range: 100 mV (all 4 channels)")
-            print("  Coupling: DC")
-            print("  Channels enabled: A, B, C, D")
-            print(f"  Sample rate: {sample_rate / 1e6:.2f} MS/s")
-            print(f"  Timebase index: {timebase_info.timebase_index}")
-            print(f"  Sample interval: {timebase_info.sample_interval_ns:.2f} ns")
-            print(f"  Total samples: {total_samples}")
-            print(f"  Pre-trigger samples: {pre_samples} ({pre_samples / sample_rate * 1e6:.3f} µs)")
-            print(f"  Post-trigger samples: {timebase_info.post_trigger_samples} ({timebase_info.post_trigger_samples / sample_rate * 1e6:.3f} µs)")
-            print(f"  Total capture time: {total_samples / sample_rate * 1e6:.3f} µs")
             
         except Exception as e:
             # Configuration failed
@@ -126,22 +106,10 @@ def main():
         
         # Phase 1.4: Apply saved trigger configuration
         try:
-            print("\nApplying trigger configuration...")
             
             # Apply saved trigger configuration to scope
             trigger_configurator = create_trigger_configurator(scope_info)
             trigger_info = trigger_configurator.apply_trigger(positron_app.config.scope.trigger)
-            
-            print("Trigger configuration applied successfully:")
-            print(f"  Threshold: {trigger_info.threshold_mv} mV")
-            print(f"  Direction: {trigger_info.direction}")
-            print(f"  Number of conditions: {trigger_info.num_conditions}")
-            for condition_str in trigger_info.conditions_summary:
-                print(f"    {condition_str}")
-            if trigger_info.auto_trigger_ms > 0:
-                print(f"  Auto-trigger: {trigger_info.auto_trigger_ms} ms")
-            else:
-                print("  Auto-trigger: Disabled")
             
         except Exception as e:
             # Trigger configuration failed
@@ -157,17 +125,11 @@ def main():
             positron_app.disconnect_scope()
             return 1
         
-        print("Positron application initialized successfully.")
-        print(f"Connected to: PicoScope {scope_info.variant} (Serial: {scope_info.serial})")
-        print(f"Configuration loaded from: {positron_app.config.config_file}")
-        
         # Phase 2: Create and show main window
-        print("\nLaunching main window...")
         main_window = MainWindow(positron_app)
         main_window.show()
         
         # Start Qt event loop
-        print("Starting event loop...")
         return app.exec()
         
     except Exception as e:
