@@ -9,20 +9,24 @@ This creates a standalone executable in the 'dist/Positron' directory.
 """
 
 import sys
+import os
 from pathlib import Path
 
 # Project root directory
 project_root = Path('.').resolve()
+
+# Prepare data files list
+datas_list = []
+# Include user manual PDF if it exists
+if os.path.exists('Positron_User_Manual.pdf'):
+    datas_list.append(('Positron_User_Manual.pdf', '.'))
 
 # Analysis: Find all source files and dependencies
 a = Analysis(
     ['main.py'],
     pathex=[str(project_root)],
     binaries=[],
-    datas=[
-        # Include any data files here if needed in the future
-        # ('data/*', 'data'),
-    ],
+    datas=datas_list,
     hiddenimports=[
         # PySide6 modules
         'PySide6.QtCore',

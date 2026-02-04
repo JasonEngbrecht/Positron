@@ -1,64 +1,193 @@
-# Positron
+# Positron - Data Acquisition System
 
-A Python-based data acquisition and analysis system for pulse detection experiments using Picoscope oscilloscopes (3000 or 6000 series). The system operates in event mode, capturing timing and energy information from 4-channel waveforms triggered by configurable hardware logic. Designed for experiments including positron annihilation lifetime spectroscopy (PALS) and related techniques.
+**A high-performance data acquisition and analysis system for nuclear physics experiments**
 
-## Requirements
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![Python 3.9+](https://img.shields.io/badge/python-3.9+-blue.svg)](https://www.python.org/downloads/)
+[![Platform: Windows](https://img.shields.io/badge/platform-Windows-lightgrey.svg)](https://www.microsoft.com/windows)
 
-- Python 3.9+
-- Picoscope oscilloscope hardware (3000 or 6000 series)
-- Picoscope SDK installed on the system
+Positron is a Python-based application designed for pulse detection experiments using PicoScope oscilloscopes. Built specifically for positron annihilation lifetime spectroscopy (PALS) and related nuclear and particle physics experiments.
 
-## Installation
+![Positron Screenshot](docs/screenshot.png) <!-- Add a screenshot if you have one -->
 
-1. Install Python dependencies:
+## 🎯 Features
+
+- **Real-time Waveform Display**: 4-channel live visualization at 3 Hz
+- **Event-Mode Acquisition**: Capture up to 10,000 events/second
+- **Advanced Pulse Analysis**: CFD timing (sub-nanosecond resolution) and energy integration
+- **Energy Calibration**: Interactive calibration using Na-22 gamma sources
+- **Analysis Panels**: Energy histograms and timing difference analysis
+- **Hardware Support**: PicoScope 3000a and 6000a series (tested on PS3406D MSO)
+
+## 📥 Downloads
+
+### For Students/End Users
+
+**Download the standalone executable** - No Python installation required!
+
+👉 **[Download Latest Release (Windows)](https://github.com/YOUR_USERNAME/Positron/releases/latest)**
+
+1. Download `Positron_v1.0.zip` from the Releases page
+2. Extract to your desired location
+3. Install PicoScope drivers (see Requirements below)
+4. Run `Positron.exe`
+5. Read `Positron_User_Manual.pdf` for instructions
+
+### For Developers
+
+Clone this repository and install from source:
+
 ```bash
+git clone https://github.com/YOUR_USERNAME/Positron.git
+cd Positron
 pip install -r requirements.txt
-```
-
-2. Ensure the Picoscope SDK is installed on your system (required by the `picosdk` package).
-
-## Running the Application
-
-```bash
 python main.py
 ```
 
-## Project Status
+## 📋 Requirements
 
-Currently implementing Phase 1: Foundation & Scope Communication.
+### System Requirements
+- **OS**: Windows 10 or later (64-bit)
+- **Hardware**: PicoScope oscilloscope (3000a or 6000a series)
+- **RAM**: 4 GB minimum, 8 GB recommended
+- **Storage**: 500 MB for application + data
 
-- ✅ Phase 1.1: Project Structure - Complete
-- ✅ Phase 1.2: Scope Connection - Complete
-  - Automatic detection of PS3000a/PS6000a series
-  - Device information retrieval
-  - Power state handling
-  - Configuration persistence
-- ✅ Phase 1.3: Basic Scope Configuration - Complete
-  - Hardcoded configuration optimized for pulse detection
-  - 100 mV voltage range on all 4 channels
-  - Maximum sample rate (250 MS/s achieved on PS3406D MSO)
-  - Time-based capture windows (1 µs pre-trigger, 2 µs post-trigger)
-  - Automatic sample count calculation
-- ✅ Phase 1.4: Trigger Configuration - Complete
-  - Advanced trigger configuration with AND/OR logic
-  - Up to 4 trigger conditions (OR logic between conditions)
-  - Each condition supports multiple channels (AND logic within condition)
-  - Hardcoded threshold (-5 mV) and direction (falling edge)
-  - Configurable auto-trigger timeout
-  - Persistent trigger configuration
-  - User-friendly configuration dialog
-- ⏳ Phase 2: Home Panel & Basic Acquisition - Pending
+### Required Drivers
+**PicoScope SDK must be installed:**
+- Download from: https://www.picotech.com/downloads
+- Install the PicoSDK package for your scope model
+- Restart your computer after installation
 
-## Development
+### Python Requirements (Source Only)
+- Python 3.9 or later
+- See `requirements.txt` for dependencies
 
-See `DEVELOPMENT_PLAN.md` for detailed development phases and architecture decisions.
+## 🚀 Quick Start
 
-## License
+### Using the Executable
 
-This project uses the following open-source libraries:
-- PySide6 (LGPL)
-- PyQtGraph (MIT)
-- NumPy (BSD)
-- picosdk-python-wrappers (ISC)
+1. **Connect your PicoScope** via USB
+2. **Launch** `Positron.exe`
+3. **Configure trigger** in the Home panel
+4. **Start acquisition** to collect data
+5. **Calibrate** using Na-22 source in Calibration panel
+6. **Analyze** results in Energy Display and Timing Display panels
 
-All dependencies use permissive licenses that allow free use in closed-source and commercial applications.
+See `Positron_User_Manual.pdf` for detailed instructions.
+
+### Running from Source
+
+```bash
+# Install dependencies
+pip install -r requirements.txt
+
+# Run the application
+python main.py
+```
+
+## 📖 Documentation
+
+- **[User Manual](DISTRIBUTION_README.md)** - Complete guide for students
+- **[Development Plan](DEVELOPMENT_PLAN.md)** - Technical documentation
+- **[Build Guide](BUILD_GUIDE.md)** - Instructions for building from source
+
+## 🏗️ Building from Source
+
+To create your own executable:
+
+```bash
+pip install pyinstaller reportlab
+python create_pdf.py  # Generate user manual
+.\build.bat           # Build executable (Windows)
+```
+
+The executable will be in `dist\Positron\`
+
+## 🔬 Technical Details
+
+### Technology Stack
+- **GUI**: PySide6 (Qt 6)
+- **Plotting**: PyQtGraph
+- **Processing**: NumPy
+- **Hardware Interface**: picosdk-python-wrappers
+- **Packaging**: PyInstaller
+
+### Hardware Configuration
+- **Voltage Range**: 100 mV (all 4 channels)
+- **Sample Rate**: Up to 250 MS/s (model dependent)
+- **Capture Window**: 3 µs (1 µs pre-trigger, 2 µs post-trigger)
+- **Trigger**: Configurable logic (AND/OR combinations)
+- **Data Storage**: In-memory (up to 1 million events)
+
+### Pulse Analysis
+- **Timing**: Constant Fraction Discrimination (CFD) at 50%
+- **Energy**: Baseline-corrected integration
+- **Resolution**: Sub-nanosecond timing, keV energy (after calibration)
+
+## 🤝 Contributing
+
+Contributions are welcome! Please feel free to submit a Pull Request.
+
+### Development Setup
+
+1. Fork the repository
+2. Clone your fork
+3. Create a feature branch
+4. Make your changes
+5. Test thoroughly
+6. Submit a pull request
+
+## 📄 License
+
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+
+### Third-Party Licenses
+This software uses the following libraries:
+- **PySide6**: LGPL v3
+- **PyQtGraph**: MIT
+- **NumPy**: BSD
+- **picosdk-python-wrappers**: ISC
+- **PyInstaller**: GPL with bundling exception
+
+## 🙏 Acknowledgments
+
+Developed for nuclear physics laboratory experiments at [Your Institution].
+
+Special thanks to:
+- Students and instructors who provided feedback
+- Pico Technology for excellent hardware and SDK
+- The Python scientific computing community
+
+## 📧 Support
+
+For questions, issues, or contributions:
+- **Issues**: [GitHub Issues](https://github.com/YOUR_USERNAME/Positron/issues)
+- **Discussions**: [GitHub Discussions](https://github.com/YOUR_USERNAME/Positron/discussions)
+- **Email**: [Your contact email]
+
+## 🗺️ Roadmap
+
+- [ ] Export data to CSV/ROOT formats
+- [ ] Additional analysis tools (2D histograms, peak fitting)
+- [ ] PicoScope 6000a series implementation
+- [ ] macOS/Linux support
+- [ ] Automated calibration procedures
+
+## 📊 Project Status
+
+**Current Version**: 1.0 (Phase 5 Complete)
+
+| Phase | Status | Description |
+|-------|--------|-------------|
+| Phase 1 | ✅ Complete | Foundation & Scope Communication |
+| Phase 2 | ✅ Complete | Home Panel & Basic Acquisition |
+| Phase 3 | ✅ Complete | Backend Processing Engine |
+| Phase 4 | ✅ Complete | Calibration Panel |
+| Phase 5 | ✅ Complete | Analysis Panels |
+| Phase 6 | ✅ Complete | Polish & Packaging |
+
+---
+
+**Developed with ❤️ for nuclear physics education**
+
+*Last Updated: February 2026*
