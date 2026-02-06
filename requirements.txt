@@ -15,3 +15,6 @@ picosdk>=1.1
 
 # Packaging (Phase 6)
 pyinstaller>=6.0.0
+
+# PDF Generation (for build process)
+reportlab>=4.0.0

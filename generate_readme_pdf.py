@@ -168,9 +168,8 @@ def markdown_to_pdf(md_file, pdf_file):
         if line.startswith('- ') or line.startswith('* '):
             bullet_text = line[2:].strip()
             # Clean up markdown formatting
-            bullet_text = bullet_text.replace('**', '<b>').replace('**', '</b>')
-            bullet_text = bullet_text.replace('`', '<font name="Courier">')
-            bullet_text = bullet_text.replace('`', '</font>')
+            bullet_text = re.sub(r'\*\*([^\*]+)\*\*', r'<b>\1</b>', bullet_text)
+            bullet_text = re.sub(r'`([^`]+)`', r'<font name="Courier">\1</font>', bullet_text)
             elements.append(Paragraph(f'• {bullet_text}', bullet_style))
             i += 1
             continue
@@ -178,7 +177,8 @@ def markdown_to_pdf(md_file, pdf_file):
         # Numbered lists
         if re.match(r'^\d+\.\s', line):
             list_text = re.sub(r'^\d+\.\s', '', line)
-            list_text = list_text.replace('**', '<b>').replace('**', '</b>')
+            list_text = re.sub(r'\*\*([^\*]+)\*\*', r'<b>\1</b>', list_text)
+            list_text = re.sub(r'`([^`]+)`', r'<font name="Courier">\1</font>', list_text)
             elements.append(Paragraph(f'{line[:3]} {list_text}', bullet_style))
             i += 1
             continue
@@ -201,9 +201,8 @@ def markdown_to_pdf(md_file, pdf_file):
         # Regular paragraphs
         if line:
             # Clean up markdown formatting
-            text = line.replace('**', '<b>').replace('**', '</b>')
-            text = text.replace('`', '<font name="Courier">')
-            text = text.replace('`', '</font>')
+            text = re.sub(r'\*\*([^\*]+)\*\*', r'<b>\1</b>', line)
+            text = re.sub(r'`([^`]+)`', r'<font name="Courier">\1</font>', text)
             # Convert markdown links to text
             text = re.sub(r'\[([^\]]+)\]\([^\)]+\)', r'\1', text)
             elements.append(Paragraph(text, body_style))

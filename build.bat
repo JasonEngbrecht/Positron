@@ -9,11 +9,33 @@ echo.
 
 REM Generate PDF user manual
 echo Generating user manual PDF...
-python generate_readme_pdf.py
-if errorlevel 1 (
-    echo WARNING: Failed to generate PDF user manual
-    echo Continuing with build anyway...
-    echo.
+where python >nul 2>nul
+if %errorlevel% equ 0 (
+    python generate_readme_pdf.py
+    if errorlevel 1 (
+        echo WARNING: Failed to generate PDF user manual
+        echo Make sure reportlab is installed: pip install reportlab
+        echo Continuing with build anyway...
+        echo.
+    )
+) else (
+    REM Try using py launcher as fallback
+    where py >nul 2>nul
+    if %errorlevel% equ 0 (
+        py generate_readme_pdf.py
+        if errorlevel 1 (
+            echo WARNING: Failed to generate PDF user manual
+            echo Make sure reportlab is installed: pip install reportlab
+            echo Continuing with build anyway...
+            echo.
+        )
+    ) else (
+        echo WARNING: Python not found in PATH
+        echo PDF user manual will not be generated
+        echo To fix: Add Python to your PATH or install reportlab: pip install reportlab
+        echo Continuing with build anyway...
+        echo.
+    )
 )
 echo.
 
