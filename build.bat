@@ -9,7 +9,7 @@ echo.
 
 REM Generate PDF user manual
 echo Generating user manual PDF...
-python create_pdf.py
+python generate_readme_pdf.py
 if errorlevel 1 (
     echo WARNING: Failed to generate PDF user manual
     echo Continuing with build anyway...

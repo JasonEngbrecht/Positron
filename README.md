@@ -25,9 +25,9 @@ Positron is a Python-based application designed for pulse detection experiments 
 
 **Download the standalone executable** - No Python installation required!
 
-👉 **[Download Latest Release (Windows)](https://github.com/JasonEngbrecht/Positron/releases/tag/v1.0)**
+👉 **[Download Latest Release (Windows)](https://github.com/JasonEngbrecht/Positron/releases/tag/v1.1.0)**
 
-1. Download `Positron_v1.0.zip` from the Releases page
+1. Download `Positron_v1.1.0.zip` from the Releases page
 2. Extract to your desired location
 3. Install PicoScope drivers (see Requirements below)
 4. Run `Positron.exe`
@@ -88,7 +88,7 @@ python main.py
 ## 📖 Documentation
 
 - **[User Manual](DISTRIBUTION_README.md)** - Complete guide for students
-- **[Development Plan](DEVELOPMENT_PLAN.md)** - Technical documentation
+- **[Architecture](ARCHITECTURE.md)** - Technical documentation for developers
 - **[Build Guide](BUILD_GUIDE.md)** - Instructions for building from source
 
 ## 🏗️ Building from Source
@@ -97,8 +97,7 @@ To create your own executable:
 
 ```bash
 pip install pyinstaller reportlab
-python create_pdf.py  # Generate user manual
-.\build.bat           # Build executable (Windows)
+.\build.bat           # Build executable (Windows) - automatically generates PDF
 ```
 
 The executable will be in `dist\Positron\`
@@ -175,7 +174,7 @@ For questions, issues, or contributions:
 
 ## 📊 Project Status
 
-**Current Version**: 1.0 (Phase 5 Complete)
+**Current Version**: 1.1.0
 
 | Phase | Status | Description |
 |-------|--------|-------------|

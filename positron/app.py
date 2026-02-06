@@ -168,6 +168,6 @@ def create_application() -> QApplication:
         app = QApplication(sys.argv)
         app.setApplicationName("Positron")
         app.setOrganizationName("Positron")
-        app.setApplicationVersion("0.1.0")
+        app.setApplicationVersion("1.1.0")
     
     return app

@@ -1,237 +1,194 @@
 # Positron - Data Acquisition System
+**User Guide for Students and Researchers**
 
-**Version**: 1.0 (Phase 5 Complete)  
-**For**: Nuclear and Particle Physics Experiments
+## What is Positron?
 
-## Overview
+Positron is a data acquisition and analysis system for pulse detection experiments using PicoScope oscilloscopes. It is designed specifically for positron annihilation lifetime spectroscopy (PALS) and related nuclear physics experiments.
 
-Positron is a data acquisition and analysis system for pulse detection experiments using PicoScope oscilloscopes. Designed for positron annihilation lifetime spectroscopy (PALS) and related nuclear physics experiments.
-
-## Quick Start
-
-### System Requirements
+## System Requirements
 
 - **Operating System**: Windows 10 or later (64-bit)
 - **Hardware**: PicoScope oscilloscope (3000 or 6000 series)
-- **Drivers**: PicoScope SDK must be installed (see Installation below)
+- **RAM**: 4 GB minimum, 8 GB recommended
+- **Storage**: 500 MB for application
+- **Required Software**: PicoScope SDK drivers (see installation below)
 
-### Installation
+## Installation
 
-1. **Install PicoScope Drivers**:
-   - Download from: https://www.picotech.com/downloads
-   - Select your PicoScope model
-   - Install the PicoSDK package
-   - Restart your computer
+### Step 1: Install PicoScope Drivers
 
-2. **Extract Positron Application**:
-   - Unzip the provided folder to your desired location
-   - Example: `C:\Program Files\Positron\`
+**IMPORTANT**: You must install the PicoScope drivers before running Positron.
 
-3. **Connect Your PicoScope**:
-   - Connect the oscilloscope to a USB port
-   - Wait for Windows to recognize the device
+1. Visit: https://www.picotech.com/downloads
+2. Select your PicoScope model (e.g., 3406D MSO or 6402D)
+3. Download and install the PicoSDK package
+4. **Restart your computer** after installation
 
-4. **Launch Positron**:
-   - Double-click `Positron.exe`
-   - The application will automatically detect your scope
-   - If no scope is detected, check connections and drivers
+### Step 2: Extract Positron
 
-## Using Positron
+1. Unzip the Positron folder to your desired location
+2. Recommended: `C:\Program Files\Positron\` or `C:\Users\YourName\Documents\Positron\`
+3. Keep all files in the extracted folder together
 
-### Main Panels
+### Step 3: Connect Hardware
 
-The application has four main tabs:
+1. Connect your PicoScope to a USB port (USB 3.0 recommended for best performance)
+2. Wait for Windows to recognize the device
+3. Ensure your detectors are connected to the oscilloscope channels
 
-1. **Home** - Acquisition control and live waveform display
-2. **Calibration** - Energy calibration using Na-22 source
-3. **Energy Display** - Calibrated energy histograms
-4. **Timing Display** - Timing difference analysis
+### Step 4: Launch Positron
 
-### Typical Workflow
+1. Navigate to the extracted Positron folder
+2. Double-click **`Positron.exe`**
+3. The application will automatically detect and connect to your PicoScope
+4. You should see the model and serial number displayed in the window title
 
-#### 1. Configure Trigger (Home Panel)
+## First Time Setup
 
-- Click "Configure Trigger" button
-- Set up logic: A OR B OR C OR D (for coincidence detection)
-- Or use specific channel combinations for your experiment
-- Click "Apply" to save
+When you first launch Positron, you'll see four main tabs:
 
-#### 2. Acquire Data (Home Panel)
+1. **Home** - Control data acquisition and view live waveforms
+2. **Calibration** - Calibrate your detectors for energy measurements
+3. **Energy Display** - View energy spectra
+4. **Timing Display** - Analyze timing differences between channels
 
-- Set optional limits:
-  - Time limit (hours:minutes:seconds)
-  - Event count limit
-- Click "Start Acquisition"
-- Monitor:
-  - Live waveforms (4 channels: Red=A, Green=B, Blue=C, Orange=D)
-  - Event count
-  - Acquisition rate (events/second)
-  - Elapsed time
-- Use "Pause/Resume" to temporarily stop
-- Use "Restart" to clear counters and start fresh
+## Getting Help
 
-#### 3. Calibrate Energy (Calibration Panel)
+**Positron has comprehensive built-in help documentation.**
 
-**Prerequisites**: Na-22 radioactive source (511 keV and 1275 keV gamma peaks)
+### Access Help:
+- Press **F1** at any time for Getting Started guide
+- Use the **Help menu** at the top of the window:
+  - Getting Started (F1)
+  - Home Panel
+  - Energy Display Panel
+  - Timing Display Panel
+  - Calibration Panel
 
-For each channel (A, B, C, D):
+**The in-app help provides detailed instructions for:**
+- Configuring triggers
+- Acquiring data
+- Performing energy calibration
+- Analyzing results
+- Troubleshooting common issues
 
-1. Click "Update All Histograms" to view energy spectrum
-2. Adjust bins (1000 recommended) and toggle log scale as needed
-3. Drag the **green region** over the 511 keV peak
-4. Drag the **blue region** over the 1275 keV peak
-5. Click "Find Peaks" - values appear in text boxes
-6. Click "Calculate Calibration"
-7. Click "Apply to [Channel]"
-8. Repeat for all channels you want to calibrate
+## Quick Start Workflow
 
-**Tips**:
-- Collect 1000+ events before calibrating
-- Use log scale to see peaks clearly
-- Peaks should be well-separated
-- Save configuration when done (automatic on exit)
+1. **Launch Positron** and verify your PicoScope is detected
+2. **Press F1** to open the Getting Started guide
+3. Follow the in-app instructions for your specific experiment
+4. Use the Help menu for detailed guidance on each panel
 
-#### 4. Analyze Data
+## Troubleshooting Installation
 
-**Energy Display Panel**:
-- View calibrated energy histograms for all channels
-- Toggle individual channels on/off
-- Switch between linear and log Y-axis
-- Auto-update every 2 seconds during acquisition
-- Manual binning control available
+### PicoScope Not Detected
 
-**Timing Display Panel**:
-- Analyze timing differences between channel pairs
-- Up to 4 slots for different pair comparisons
-- Energy filtering (requires calibrated channels):
-  - Set energy windows for each channel
-  - Only events within windows are included
-- Auto-update every 2 seconds during acquisition
+If Positron reports "No PicoScope device detected":
 
-### Tips and Best Practices
+1. Check the USB connection (try a different port)
+2. Verify the scope is powered on
+3. Confirm PicoScope drivers are installed:
+   - Go to Windows Device Manager
+   - Look for "Pico Technology" devices
+   - If missing or showing errors, reinstall drivers
+4. Close PicoScope software if it's running (only one program can connect at a time)
+5. Restart Positron
 
-1. **Acquisition Rate**:
-   - System supports up to 10,000 events/second
-   - Typical rates: 100-1000 events/second
-   - Lower rates → better signal quality
+### Application Won't Start
 
-2. **Trigger Configuration**:
-   - Use "OR" logic for maximum event capture
-   - Use "AND" logic for coincidence requirements
-   - Adjust based on your experimental needs
+If Positron.exe won't launch:
 
-3. **Calibration**:
-   - Calibrate with good statistics (1000+ events)
-   - Recalibrate if detector conditions change
-   - Save configuration before closing
+1. Ensure all files from the zip are extracted together
+2. Check Windows antivirus hasn't quarantined files
+3. Right-click Positron.exe → Properties → Unblock (if option appears)
+4. Try running as Administrator (right-click → Run as administrator)
 
-4. **Data Management**:
-   - Currently stores up to 1 million events in memory
-   - Close and restart for new experiments
-   - Export functionality (coming in future updates)
+### Missing DLL Errors
 
-5. **Performance**:
-   - Close other applications during acquisition
-   - Keep acquisition window visible for best performance
-   - Pause if you need to do lengthy analysis
-
-## Hardware Configuration
-
-The system is optimized for pulse detection with fixed settings:
-
-- **Voltage Range**: 100 mV (all channels)
-- **Coupling**: DC
-- **Channels**: 4 (A, B, C, D)
-- **Sample Rate**: Maximum available (typically 250 MS/s for PS3000a)
-- **Capture Window**: 
-  - Pre-trigger: 1 µs
-  - Post-trigger: 2 µs
-  - Total: 3 µs
-
-**Trigger Settings**:
-- Threshold: -5 mV
-- Edge: Falling
-- Hysteresis: 10 ADC counts
-- Logic: User-configurable (OR/AND combinations)
-
-## Troubleshooting
-
-### Scope Not Detected
-
-1. Check USB connection
-2. Verify scope is powered on
-3. Install/reinstall PicoScope drivers
-4. Try a different USB port
-5. Restart the application
-
-### No Events Detected
-
-1. Check signal connections
-2. Verify trigger configuration
-3. Adjust trigger threshold if needed
-4. Check that signals exceed 5 mV threshold
-
-### Application Crashes or Errors
-
-1. Check console output for error messages
-2. Verify all cables are connected properly
-3. Restart the scope and application
-4. Reinstall PicoScope drivers if persistent
-
-### Low Acquisition Rate
-
-1. Close other applications
-2. Reduce number of active analysis panels
-3. Check USB connection quality
-4. Verify scope temperature (cooling)
+If you see errors about missing DLL files:
+- Reinstall PicoScope drivers (PicoSDK)
+- Ensure you extracted the entire Positron folder, not just the .exe file
 
 ## Technical Support
 
-For issues or questions:
+For help with Positron:
 
-1. Check the troubleshooting section above
-2. Review console output for error messages
-3. Contact your lab instructor or supervisor
-4. Provide detailed information:
-   - PicoScope model
+1. **First**: Check the in-app Help menu (press F1)
+2. **Installation issues**: Verify drivers are installed and PicoScope is detected
+3. **Usage questions**: Consult your lab instructor or supervisor
+4. **Bug reports**: Provide:
+   - PicoScope model (shown in window title)
    - Windows version
-   - Error messages
+   - Error messages (take screenshots)
    - Steps to reproduce the issue
 
-## About
+## Hardware Configuration
 
-**Positron** was developed for nuclear physics laboratory experiments, specifically designed for positron annihilation lifetime spectroscopy (PALS) and related particle detection experiments.
+Positron automatically configures your PicoScope with optimized settings for pulse detection:
 
-### Key Features
+- **Voltage Range**: 100 mV (all 4 channels)
+- **Sample Rate**: Maximum available (typically 250 MS/s to 1.25 GS/s)
+- **Capture Window**: 3 µs (1 µs pre-trigger, 2 µs post-trigger)
+- **Trigger**: -5 mV threshold, falling edge, configurable logic
 
-- Real-time waveform display (4 channels)
-- Event-mode acquisition (up to 10,000 events/s)
-- Pulse analysis (CFD timing, energy integration)
-- Energy calibration using standard sources
-- Multiple analysis panels for visualization
-- Thread-safe data management
+These settings are optimized for typical PALS experiments and do not require adjustment.
 
-### Technology
+### IMPORTANT: Input Impedance Configuration
 
-- **Framework**: PySide6 (Qt)
-- **Plotting**: PyQtGraph
-- **Processing**: NumPy
-- **Hardware Interface**: PicoSDK Python wrappers
+**Input impedance must be 50 Ω for proper signal termination.** The setup differs between PicoScope models:
 
-### License
+#### 6000 Series (e.g., 6402D)
+✅ **Software-Controlled**: Positron automatically configures the input impedance to 50 Ω in software. No external termination needed.
 
-Educational and research use.
+#### 3000 Series (e.g., 3406D MSO)
+⚠️ **External Termination Required**: The 3000 series has fixed 1 MΩ input impedance. You MUST add external 50 Ω terminators to each active channel.
+
+**Recommended Setup: BNC T-Connector with 50 Ω Terminator**
+
+```
+Signal Source (Detector)
+         |
+         | (BNC cable)
+         |
+    ┌────▼────┐
+    │  BNC T  │  (T-connector on scope input)
+    └─┬─────┬─┘
+      │     │
+      │     └─────── 50 Ω Terminator (BNC plug with 50 Ω resistor)
+      │
+      └─────────────► PicoScope Channel Input (A, B, C, or D)
+```
+
+**Parts Needed (for 3000 series):**
+- 4× BNC T-connectors (one per channel)
+- 4× 50 Ω BNC terminators (standard coaxial terminators)
+- Available from electronics suppliers (e.g., Pomona Electronics, Amphenol)
+
+**Why 50 Ω Termination Matters:**
+- Prevents signal reflections and ringing
+- Matches the cable impedance (RG-58 coax is 50 Ω)
+- Provides correct signal amplitude
+- Essential for accurate timing measurements
+
+**Verification:**
+- With proper termination, your baseline should be stable near 0 mV
+- Without termination, you may see reflections, overshoot, and incorrect pulse shapes
+
+## About Positron
+
+**Version**: 1.1.0  
+**Compatible Hardware**: PicoScope 3000a and 6000 series  
+**License**: Educational and research use
+
+Positron was developed for nuclear physics laboratory experiments, providing:
+- Real-time 4-channel waveform display
+- Event-mode acquisition (up to 10,000 events/second)
+- Constant Fraction Discrimination (CFD) timing analysis
+- Energy calibration with standard sources
+- Interactive histogram displays
+
+**Technology Stack**: Python, PySide6 (Qt), PyQtGraph, NumPy, PicoSDK
 
 ---
 
-**Development**: Phase 5 Complete  
-**Last Updated**: February 2026  
-**Compatible**: PicoScope 3000a, 6000a series
-
-## Acknowledgments
-
-Developed for student laboratory experiments in nuclear and particle physics.
-
----
-
-For updates and documentation, contact your lab supervisor.
+**Remember**: Press **F1** or use the **Help menu** for complete documentation on using Positron!

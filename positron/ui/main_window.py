@@ -148,7 +148,7 @@ class MainWindow(QMainWindow):
             self,
             "About Positron",
             f"<h2>Positron</h2>"
-            f"<p>Version 0.1.0</p>"
+            f"<p>Version 1.1.0</p>"
             f"<p>Data acquisition and analysis system for pulse detection experiments.</p>"
             f"<p>Designed for positron annihilation lifetime spectroscopy (PALS) "
             f"and related techniques.</p>"
