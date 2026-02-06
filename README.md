@@ -25,7 +25,7 @@ Positron is a Python-based application designed for pulse detection experiments 
 
 **Download the standalone executable** - No Python installation required!
 
-👉 **[Download Latest Release (Windows)](https://github.com/YOUR_USERNAME/Positron/releases/latest)**
+👉 **[Download Latest Release (Windows)](https://github.com/JasonEngbrecht/Positron/releases/tag/v1.0)**
 
 1. Download `Positron_v1.0.zip` from the Releases page
 2. Extract to your desired location

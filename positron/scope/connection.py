@@ -33,8 +33,7 @@ class ScopeConnection:
         """Initialize scope connection manager."""
         self._scope_info: Optional[ScopeInfo] = None
         self._ps3000a = None
-        self._ps6000a = None
-        self._enums = None
+        self._ps6000 = None
     
     @property
     def is_connected(self) -> bool:
@@ -50,7 +49,7 @@ class ScopeConnection:
         """
         Automatically detect and connect to a PicoScope device.
         
-        Tries PS3000a series first, then PS6000a series.
+        Tries PS6000 series first, then PS3000a series.
         
         Returns:
             ScopeInfo: Information about the connected device
@@ -59,22 +58,22 @@ class ScopeConnection:
             DeviceNotFoundError: If no compatible device is found
             PicoSDKCtypesError: If there's an error communicating with the device
         """
-        # Try PS3000a first (most common for this application)
+        # Try PS6000 first (6402D)
+        try:
+            scope_info = self._connect_ps6000()
+            self._scope_info = scope_info
+            return scope_info
+        except (DeviceNotFoundError, PicoSDKCtypesError, Exception) as e:
+            # Not a PS6000 device or not found
+            pass
+        
+        # Try PS3000a as fallback
         try:
             scope_info = self._connect_ps3000a()
             self._scope_info = scope_info
             return scope_info
         except (DeviceNotFoundError, PicoSDKCtypesError, Exception) as e:
             # Not a PS3000a device or not found
-            pass
-        
-        # Try PS6000a
-        try:
-            scope_info = self._connect_ps6000a()
-            self._scope_info = scope_info
-            return scope_info
-        except (DeviceNotFoundError, PicoSDKCtypesError, Exception) as e:
-            # Not a PS6000a device or not found
             pass
         
         raise DeviceNotFoundError(
@@ -137,53 +136,46 @@ class ScopeConnection:
             api_module=ps
         )
     
-    def _connect_ps6000a(self) -> ScopeInfo:
+    def _connect_ps6000(self) -> ScopeInfo:
         """
-        Connect to a PS6000a series oscilloscope.
+        Connect to a PS6000 series oscilloscope (original, not PS6000a).
         
         Returns:
             ScopeInfo: Information about the connected device
             
         Raises:
-            DeviceNotFoundError: If no PS6000a device is found
+            DeviceNotFoundError: If no PS6000 device is found
         """
-        from picosdk.ps6000a import ps6000a as ps
-        from picosdk.PicoDeviceEnums import picoEnum as enums
+        from picosdk.ps6000 import ps6000 as ps
         
-        self._ps6000a = ps
-        self._enums = enums
+        self._ps6000 = ps
         
         # Create handle
         chandle = ctypes.c_int16()
         status = {}
         
-        # Open with 8-bit resolution (can be changed later if needed)
-        resolution = enums.PICO_DEVICE_RESOLUTION["PICO_DR_8BIT"]
-        status["openunit"] = ps.ps6000aOpenUnit(ctypes.byref(chandle), None, resolution)
+        # Open unit (no resolution parameter for PS6000)
+        status["openunit"] = ps.ps6000OpenUnit(ctypes.byref(chandle), None)
         
         try:
             assert_pico_ok(status["openunit"])
         except Exception as e:
-            raise DeviceNotFoundError(f"Failed to open PS6000a device: {e}")
+            raise DeviceNotFoundError(f"Failed to open PS6000 device: {e}")
         
         # Get device information
-        variant_str = self._get_unit_info_ps6000a(chandle, ps, 3)  # Variant info (Model)
-        serial_str = self._get_unit_info_ps6000a(chandle, ps, 4)  # Serial number
+        variant_str = self._get_unit_info_ps6000(chandle, ps, 3)  # Variant info (Model)
+        serial_str = self._get_unit_info_ps6000(chandle, ps, 4)  # Serial number
         
-        # Get ADC limits
-        min_adc = ctypes.c_int16()
-        max_adc = ctypes.c_int16()
-        status["getAdcLimits"] = ps.ps6000aGetAdcLimits(
-            chandle, resolution, ctypes.byref(min_adc), ctypes.byref(max_adc)
-        )
-        assert_pico_ok(status["getAdcLimits"])
+        # PS6000 uses fixed 8-bit resolution with max ADC value of 32512
+        # (This is the value used in official PicoSDK examples)
+        max_adc = 32512
         
         return ScopeInfo(
-            series="6000a",
+            series="6000",
             variant=variant_str,
             serial=serial_str,
             handle=chandle,
-            max_adc=max_adc.value,
+            max_adc=max_adc,
             api_module=ps
         )
     
@@ -219,13 +211,13 @@ class ScopeConnection:
         except Exception:
             return "Unknown"
     
-    def _get_unit_info_ps6000a(self, chandle: ctypes.c_int16, ps, info_type: int) -> str:
+    def _get_unit_info_ps6000(self, chandle: ctypes.c_int16, ps, info_type: int) -> str:
         """
-        Get unit information string for PS6000a.
+        Get unit information string for PS6000.
         
         Args:
             chandle: Device handle
-            ps: ps6000a module
+            ps: ps6000 module
             info_type: Type of information to retrieve
                 3 = Variant/Model
                 4 = Serial number
@@ -237,7 +229,7 @@ class ScopeConnection:
         info_string = ctypes.cast(info_buffer, ctypes.c_char_p)
         required_size = ctypes.c_int16(256)
         
-        status = ps.ps6000aGetUnitInfo(
+        status = ps.ps6000GetUnitInfo(
             chandle,
             info_string,
             256,
@@ -273,9 +265,15 @@ class ScopeConnection:
                 except Exception:
                     pass  # Ignore close errors
                     
-            elif self._scope_info.series == "6000a" and self._ps6000a:
+            elif self._scope_info.series == "6000" and self._ps6000:
+                # Stop any ongoing operations
+                try:
+                    self._ps6000.ps6000Stop(self._scope_info.handle)
+                except Exception:
+                    pass  # Ignore errors if scope wasn't running
+                
                 # Close the unit
-                status = self._ps6000a.ps6000aCloseUnit(self._scope_info.handle)
+                status = self._ps6000.ps6000CloseUnit(self._scope_info.handle)
                 try:
                     assert_pico_ok(status)
                 except Exception:
@@ -285,8 +283,7 @@ class ScopeConnection:
             # Clear connection state
             self._scope_info = None
             self._ps3000a = None
-            self._ps6000a = None
-            self._enums = None
+            self._ps6000 = None
 
 
 # Global instance for application-wide scope connection

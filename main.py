@@ -83,11 +83,13 @@ def main():
             sample_rate = configurator.get_actual_sample_rate()
             total_samples, pre_samples = configurator.get_sample_counts()
             voltage_range_code = configurator.get_voltage_range_code()
+            timebase_info = configurator.get_timebase_info()
             
             positron_app.config.scope.sample_rate = sample_rate
             positron_app.config.scope.waveform_length = total_samples
             positron_app.config.scope.pre_trigger_samples = pre_samples
             positron_app.config.scope.voltage_range_code = voltage_range_code
+            positron_app.config.scope.timebase_index = timebase_info.timebase_index
             positron_app.save_config()
             
         except Exception as e:

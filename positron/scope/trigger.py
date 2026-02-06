@@ -271,27 +271,210 @@ class PS3000aTriggerConfigurator:
             raise RuntimeError(f"Failed to set trigger directions: {e}\nStatus code: {status}")
 
 
-class PS6000aTriggerConfigurator:
+class PS6000TriggerConfigurator:
     """
-    Stub configurator for PS6000a series oscilloscopes.
+    Trigger configurator for PS6000 series oscilloscopes (original, not PS6000a).
     
-    To be implemented in future phases.
+    Implements advanced trigger configuration with AND/OR logic using the full trigger API.
     """
+    
+    # Channel name to index mapping
+    CHANNEL_MAP = {'A': 0, 'B': 1, 'C': 2, 'D': 3}
     
     def __init__(self, scope_info: ScopeInfo):
-        """Initialize PS6000a trigger configurator."""
-        if scope_info.series != "6000a":
-            raise ValueError(f"PS6000aTriggerConfigurator requires 6000a series, got {scope_info.series}")
+        """
+        Initialize PS6000 trigger configurator.
+        
+        Args:
+            scope_info: Information about the connected scope
+        """
+        if scope_info.series != "6000":
+            raise ValueError(f"PS6000TriggerConfigurator requires 6000 series, got {scope_info.series}")
         
         self.scope_info = scope_info
+        self.handle = scope_info.handle
+        self.ps = scope_info.api_module
+        self.max_adc = scope_info.max_adc
     
     def apply_trigger(self, trigger_config: TriggerConfig) -> AppliedTriggerInfo:
-        """Not yet implemented."""
-        raise NotImplementedError(
-            "PS6000a trigger configuration is not yet implemented. "
-            "This will be added in a future phase. "
-            "Currently only PS3000a series is supported."
+        """
+        Apply trigger configuration to PS6000 scope.
+        
+        Sets up:
+        1. Trigger properties (threshold, hysteresis) for each participating channel
+        2. Trigger conditions (AND/OR logic) using multiple condition structs
+        3. Trigger directions (falling edge for all channels)
+        """
+        # Validate that at least one condition is valid
+        valid_conditions = trigger_config.get_valid_conditions()
+        if not valid_conditions:
+            raise ValueError("At least one trigger condition must be enabled with channels selected")
+        
+        # Get all unique channels that participate in any trigger condition
+        participating_channels = self._get_participating_channels(valid_conditions)
+        
+        # Step 1: Set trigger properties for all participating channels
+        self._set_trigger_properties(participating_channels, trigger_config.auto_trigger_enabled)
+        
+        # Step 2: Set trigger conditions (AND/OR logic)
+        self._set_trigger_conditions(valid_conditions)
+        
+        # Step 3: Set trigger directions (falling edge)
+        self._set_trigger_directions(participating_channels)
+        
+        # Create summary
+        conditions_summary = []
+        for i, condition in enumerate(valid_conditions):
+            channels_str = " AND ".join(f"Ch{ch}" for ch in condition.channels)
+            conditions_summary.append(f"Condition {i+1}: {channels_str}")
+        
+        auto_trigger_ms = AUTO_TRIGGER_MAX_MS if trigger_config.auto_trigger_enabled else 0
+        
+        return AppliedTriggerInfo(
+            num_conditions=len(valid_conditions),
+            conditions_summary=conditions_summary,
+            auto_trigger_ms=auto_trigger_ms,
+            threshold_mv=TRIGGER_THRESHOLD_MV,
+            direction="Falling"
         )
+    
+    def _get_participating_channels(self, conditions: List[TriggerCondition]) -> List[str]:
+        """Get list of unique channels that participate in any condition."""
+        channels_set = set()
+        for condition in conditions:
+            channels_set.update(condition.channels)
+        return sorted(list(channels_set))
+    
+    def _set_trigger_properties(self, channels: List[str], auto_trigger_enabled: bool) -> None:
+        """
+        Set trigger properties (threshold, hysteresis) for participating channels.
+        
+        Args:
+            channels: List of channel names ('A', 'B', 'C', 'D')
+            auto_trigger_enabled: Whether auto-trigger is enabled
+        """
+        # Convert threshold from mV to ADC counts (using 100mV range = 3)
+        voltage_range = 3  # PS6000_100MV = 3 (from PS6000_RANGE enum)
+        max_adc_ctypes = ctypes.c_int16(self.max_adc)
+        threshold_adc = mV2adc(TRIGGER_THRESHOLD_MV, voltage_range, max_adc_ctypes)
+        
+        # Auto-trigger timeout
+        auto_trigger_ms = AUTO_TRIGGER_MAX_MS if auto_trigger_enabled else 0
+        
+        # Create trigger channel properties array
+        # We need one property struct per participating channel
+        properties_array = (self.ps.PS6000_TRIGGER_CHANNEL_PROPERTIES * len(channels))()
+        
+        for i, channel_name in enumerate(channels):
+            channel_idx = self.CHANNEL_MAP[channel_name]
+            
+            properties_array[i].thresholdUpper = threshold_adc
+            properties_array[i].hysteresisUpper = TRIGGER_HYSTERESIS
+            properties_array[i].thresholdLower = threshold_adc
+            properties_array[i].hysteresisLower = TRIGGER_HYSTERESIS
+            properties_array[i].channel = channel_idx  # PS6000 uses numeric channel codes
+            properties_array[i].thresholdMode = 0  # PS6000_LEVEL = 0
+        
+        # Apply trigger properties
+        status = self.ps.ps6000SetTriggerChannelProperties(
+            self.handle,
+            ctypes.byref(properties_array),
+            len(channels),
+            0,  # auxOutputEnabled (not used)
+            auto_trigger_ms
+        )
+        
+        try:
+            assert_pico_ok(status)
+        except Exception as e:
+            raise RuntimeError(f"Failed to set trigger properties: {e}\nStatus code: {status}")
+    
+    def _set_trigger_conditions(self, conditions: List[TriggerCondition]) -> None:
+        """
+        Set trigger conditions with AND/OR logic.
+        
+        Multiple condition structs implement OR logic between them.
+        Within each struct, channels set to CONDITION_TRUE implement AND logic.
+        
+        Args:
+            conditions: List of valid trigger conditions
+        """
+        # Create one condition struct per trigger condition (implements OR logic)
+        conditions_array = (self.ps.PS6000_TRIGGER_CONDITIONS * len(conditions))()
+        
+        for i, condition in enumerate(conditions):
+            # Initialize all channels to DONT_CARE (0)
+            conditions_array[i].channelA = 0  # PS6000_CONDITION_DONT_CARE
+            conditions_array[i].channelB = 0
+            conditions_array[i].channelC = 0
+            conditions_array[i].channelD = 0
+            conditions_array[i].external = 0
+            conditions_array[i].aux = 0
+            conditions_array[i].pulseWidthQualifier = 0
+            
+            # Set participating channels to CONDITION_TRUE (1) - implements AND logic
+            for channel_name in condition.channels:
+                if channel_name == 'A':
+                    conditions_array[i].channelA = 1  # PS6000_CONDITION_TRUE
+                elif channel_name == 'B':
+                    conditions_array[i].channelB = 1
+                elif channel_name == 'C':
+                    conditions_array[i].channelC = 1
+                elif channel_name == 'D':
+                    conditions_array[i].channelD = 1
+        
+        # Apply trigger conditions
+        status = self.ps.ps6000SetTriggerChannelConditions(
+            self.handle,
+            ctypes.byref(conditions_array),
+            len(conditions)
+        )
+        
+        try:
+            assert_pico_ok(status)
+        except Exception as e:
+            raise RuntimeError(f"Failed to set trigger conditions: {e}\nStatus code: {status}")
+    
+    def _set_trigger_directions(self, channels: List[str]) -> None:
+        """
+        Set trigger directions (falling edge) for all participating channels.
+        
+        Args:
+            channels: List of channel names ('A', 'B', 'C', 'D')
+        """
+        # Initialize all directions to NONE (2)
+        direction_a = 2  # PS6000_NONE
+        direction_b = 2
+        direction_c = 2
+        direction_d = 2
+        
+        # Set falling edge (3) for participating channels
+        # From PS6000_THRESHOLD_DIRECTION enum: FALLING = 3
+        falling = 3  # PS6000_FALLING
+        if 'A' in channels:
+            direction_a = falling
+        if 'B' in channels:
+            direction_b = falling
+        if 'C' in channels:
+            direction_c = falling
+        if 'D' in channels:
+            direction_d = falling
+        
+        # Apply trigger directions
+        status = self.ps.ps6000SetTriggerChannelDirections(
+            self.handle,
+            direction_a,
+            direction_b,
+            direction_c,
+            direction_d,
+            2,  # external: RISING (2) - required even if not used
+            2   # aux: NONE (2)
+        )
+        
+        try:
+            assert_pico_ok(status)
+        except Exception as e:
+            raise RuntimeError(f"Failed to set trigger directions: {e}\nStatus code: {status}")
 
 
 def create_trigger_configurator(scope_info: ScopeInfo) -> TriggerConfigurator:
@@ -309,10 +492,10 @@ def create_trigger_configurator(scope_info: ScopeInfo) -> TriggerConfigurator:
     """
     if scope_info.series == "3000a":
         return PS3000aTriggerConfigurator(scope_info)
-    elif scope_info.series == "6000a":
-        return PS6000aTriggerConfigurator(scope_info)
+    elif scope_info.series == "6000":
+        return PS6000TriggerConfigurator(scope_info)
     else:
         raise ValueError(
             f"Unsupported scope series: {scope_info.series}. "
-            f"Supported series: 3000a, 6000a"
+            f"Supported series: 3000a, 6000"
         )

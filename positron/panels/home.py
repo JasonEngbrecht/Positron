@@ -717,21 +717,40 @@ class HomePanel(QWidget):
         config = self.app.config
         scope_info = self.app.scope_info
         
+        # Apply trigger configuration to hardware BEFORE creating acquisition engine
+        try:
+            trigger_configurator = create_trigger_configurator(scope_info)
+            trigger_configurator.apply_trigger(config.scope.trigger)
+        except Exception as e:
+            from PySide6.QtWidgets import QMessageBox
+            QMessageBox.critical(
+                self,
+                "Trigger Configuration Error",
+                f"Failed to configure trigger:\n{e}\n\nAcquisition cannot start."
+            )
+            raise
+        
         # Calculate sample interval from sample rate
         sample_rate = config.scope.sample_rate
         sample_interval_ns = 1e9 / sample_rate if sample_rate else 8.0
+        
+        # Adjust batch size for PS6000 (20 vs 10 for PS3000a)
+        batch_size = config.default_batch_size
+        if scope_info.series == "6000" and batch_size == 10:
+            batch_size = 20  # PS6000 uses larger batches
         
         # Create engine
         self.acquisition_engine = create_acquisition_engine(
             scope_info=scope_info,
             event_storage=self.app.event_storage,
-            batch_size=config.default_batch_size,
+            batch_size=batch_size,
             sample_count=config.scope.waveform_length,
             pre_trigger_samples=config.scope.pre_trigger_samples,
             sample_interval_ns=sample_interval_ns,
             voltage_range_code=config.scope.voltage_range_code,
             max_adc=scope_info.max_adc,
-            cfd_fraction=config.cfd_fraction
+            cfd_fraction=config.cfd_fraction,
+            timebase_index=config.scope.timebase_index
         )
         
         # Connect signals

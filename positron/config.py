@@ -176,7 +176,8 @@ class ScopeConfig:
     waveform_length: int = 375  # Total number of samples (calculated from sample rate and 3 µs)
     pre_trigger_samples: int = 125  # Pre-trigger sample count (calculated from sample rate and 1 µs)
     sample_rate: Optional[float] = None  # Achieved sample rate in Hz (e.g., 125000000.0 for 125 MS/s)
-    voltage_range_code: int = 3  # Voltage range code used (3 = PS3000A_100MV for PS3000a series)
+    voltage_range_code: int = 3  # Voltage range code used (3 = PS3000A_100MV for PS3000a, 5 for PS6000a)
+    timebase_index: int = 0  # Timebase index (used by PS6000a, calculated by PS3000a)
     
     # Trigger configuration
     trigger: TriggerConfig = field(default_factory=TriggerConfig.create_default)
@@ -197,6 +198,7 @@ class ScopeConfig:
             "pre_trigger_samples": self.pre_trigger_samples,
             "sample_rate": self.sample_rate,
             "voltage_range_code": self.voltage_range_code,
+            "timebase_index": self.timebase_index,
             "trigger": self.trigger.to_dict(),
             "calibration_a": self.calibration_a.to_dict(),
             "calibration_b": self.calibration_b.to_dict(),
@@ -210,7 +212,7 @@ class ScopeConfig:
         # Filter out old/unknown fields for backward compatibility
         valid_fields = {
             "scope_series", "last_variant", "last_serial",
-            "waveform_length", "pre_trigger_samples", "sample_rate", "voltage_range_code"
+            "waveform_length", "pre_trigger_samples", "sample_rate", "voltage_range_code", "timebase_index"
         }
         filtered_data = {k: v for k, v in data.items() if k in valid_fields}
         
