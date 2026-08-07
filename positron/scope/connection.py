@@ -1,27 +1,31 @@
 """
-Scope discovery and connection management for PicoScope 3000a and 6000a series.
+Scope discovery and connection management for PicoScope 3000a and 6000 series.
 
 This module handles automatic detection and connection to PicoScope oscilloscopes,
-supporting both PS3000a and PS6000a series devices.
+supporting both PS3000a and PS6000 (original ps6000 API) series devices.
 """
 
 import ctypes
-from typing import Optional, Tuple, Dict, Any
+import logging
+from typing import Optional, Any
 from dataclasses import dataclass
 
-from picosdk.errors import DeviceNotFoundError, PicoSDKCtypesError
+from picosdk.errors import DeviceNotFoundError
 from picosdk.functions import assert_pico_ok
+
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
 class ScopeInfo:
     """Information about a connected oscilloscope."""
-    series: str  # "3000a" or "6000a"
+    series: str  # "3000a" or "6000"
     variant: str  # e.g., "3406D MSO"
     serial: str
     handle: ctypes.c_int16
     max_adc: int  # Maximum ADC count for voltage conversion
-    api_module: Any  # Reference to ps3000a or ps6000a module
+    api_module: Any  # Reference to ps3000a or ps6000 module
 
 
 class ScopeConnection:
@@ -32,8 +36,6 @@ class ScopeConnection:
     def __init__(self):
         """Initialize scope connection manager."""
         self._scope_info: Optional[ScopeInfo] = None
-        self._ps3000a = None
-        self._ps6000 = None
     
     @property
     def is_connected(self) -> bool:
@@ -56,26 +58,26 @@ class ScopeConnection:
             
         Raises:
             DeviceNotFoundError: If no compatible device is found
-            PicoSDKCtypesError: If there's an error communicating with the device
         """
         # Try PS6000 first (6402D)
         try:
             scope_info = self._connect_ps6000()
             self._scope_info = scope_info
             return scope_info
-        except (DeviceNotFoundError, PicoSDKCtypesError, Exception) as e:
-            # Not a PS6000 device or not found
-            pass
-        
+        except Exception as e:
+            # Not a PS6000 device or not found. Logged (not raised) because a
+            # missing ps6000 driver DLL would otherwise masquerade as
+            # "no device found" with no trace of the real cause.
+            logger.info("PS6000 connection attempt failed: %s", e)
+
         # Try PS3000a as fallback
         try:
             scope_info = self._connect_ps3000a()
             self._scope_info = scope_info
             return scope_info
-        except (DeviceNotFoundError, PicoSDKCtypesError, Exception) as e:
-            # Not a PS3000a device or not found
-            pass
-        
+        except Exception as e:
+            logger.info("PS3000a connection attempt failed: %s", e)
+
         raise DeviceNotFoundError(
             "No PicoScope device found. Please check:\n"
             "- Device is connected via USB\n"
@@ -94,8 +96,7 @@ class ScopeConnection:
             DeviceNotFoundError: If no PS3000a device is found
         """
         from picosdk.ps3000a import ps3000a as ps
-        self._ps3000a = ps
-        
+
         # Create handle
         chandle = ctypes.c_int16()
         status = {}
@@ -119,8 +120,8 @@ class ScopeConnection:
             raise DeviceNotFoundError(f"Failed to open PS3000a device (status: {powerstate})")
         
         # Get device information
-        variant_str = self._get_unit_info_ps3000a(chandle, ps, 3)  # Variant info (Model)
-        serial_str = self._get_unit_info_ps3000a(chandle, ps, 4)  # Serial number
+        variant_str = self._get_unit_info(ps.ps3000aGetUnitInfo, chandle, 3)  # Variant/Model
+        serial_str = self._get_unit_info(ps.ps3000aGetUnitInfo, chandle, 4)  # Serial number
         
         # Get max ADC value
         max_adc = ctypes.c_int16()
@@ -147,9 +148,7 @@ class ScopeConnection:
             DeviceNotFoundError: If no PS6000 device is found
         """
         from picosdk.ps6000 import ps6000 as ps
-        
-        self._ps6000 = ps
-        
+
         # Create handle
         chandle = ctypes.c_int16()
         status = {}
@@ -163,8 +162,8 @@ class ScopeConnection:
             raise DeviceNotFoundError(f"Failed to open PS6000 device: {e}")
         
         # Get device information
-        variant_str = self._get_unit_info_ps6000(chandle, ps, 3)  # Variant info (Model)
-        serial_str = self._get_unit_info_ps6000(chandle, ps, 4)  # Serial number
+        variant_str = self._get_unit_info(ps.ps6000GetUnitInfo, chandle, 3)  # Variant/Model
+        serial_str = self._get_unit_info(ps.ps6000GetUnitInfo, chandle, 4)  # Serial number
         
         # PS6000 uses fixed 8-bit resolution with max ADC value of 32512
         # (This is the value used in official PicoSDK examples)
@@ -179,111 +178,68 @@ class ScopeConnection:
             api_module=ps
         )
     
-    def _get_unit_info_ps3000a(self, chandle: ctypes.c_int16, ps, info_type: int) -> str:
+    @staticmethod
+    def _get_unit_info(get_unit_info_fn, chandle: ctypes.c_int16, info_type: int) -> str:
         """
-        Get unit information string for PS3000a.
-        
+        Get a unit information string via the given SDK GetUnitInfo function.
+
         Args:
+            get_unit_info_fn: Bound SDK function (ps3000aGetUnitInfo or ps6000GetUnitInfo)
             chandle: Device handle
-            ps: ps3000a module
             info_type: Type of information to retrieve
                 3 = Variant/Model
                 4 = Serial number
-                
+
         Returns:
-            Information string
+            Information string, or "Unknown" if the query fails
         """
         info_buffer = ctypes.create_string_buffer(256)
         info_string = ctypes.cast(info_buffer, ctypes.c_char_p)
         required_size = ctypes.c_int16(256)
-        
-        status = ps.ps3000aGetUnitInfo(
+
+        status = get_unit_info_fn(
             chandle,
             info_string,
             256,
             ctypes.byref(required_size),
             info_type
         )
-        
+
         try:
             assert_pico_ok(status)
             return info_buffer.value.decode('utf-8')
         except Exception:
             return "Unknown"
-    
-    def _get_unit_info_ps6000(self, chandle: ctypes.c_int16, ps, info_type: int) -> str:
-        """
-        Get unit information string for PS6000.
-        
-        Args:
-            chandle: Device handle
-            ps: ps6000 module
-            info_type: Type of information to retrieve
-                3 = Variant/Model
-                4 = Serial number
-                
-        Returns:
-            Information string
-        """
-        info_buffer = ctypes.create_string_buffer(256)
-        info_string = ctypes.cast(info_buffer, ctypes.c_char_p)
-        required_size = ctypes.c_int16(256)
-        
-        status = ps.ps6000GetUnitInfo(
-            chandle,
-            info_string,
-            256,
-            ctypes.byref(required_size),
-            info_type
-        )
-        
-        try:
-            assert_pico_ok(status)
-            return info_buffer.value.decode('utf-8')
-        except Exception:
-            return "Unknown"
-    
+
     def disconnect(self) -> None:
         """
         Disconnect from the currently connected scope and clean up resources.
         """
         if not self._scope_info:
             return
-        
+
+        # Local import: driver.py imports ScopeInfo from this module, so a
+        # top-level import here would be circular.
+        from positron.scope.driver import create_driver
+
         try:
-            if self._scope_info.series == "3000a" and self._ps3000a:
-                # Stop any ongoing operations
-                try:
-                    self._ps3000a.ps3000aStop(self._scope_info.handle)
-                except Exception:
-                    pass  # Ignore errors if scope wasn't running
-                
-                # Close the unit
-                status = self._ps3000a.ps3000aCloseUnit(self._scope_info.handle)
-                try:
-                    assert_pico_ok(status)
-                except Exception:
-                    pass  # Ignore close errors
-                    
-            elif self._scope_info.series == "6000" and self._ps6000:
-                # Stop any ongoing operations
-                try:
-                    self._ps6000.ps6000Stop(self._scope_info.handle)
-                except Exception:
-                    pass  # Ignore errors if scope wasn't running
-                
-                # Close the unit
-                status = self._ps6000.ps6000CloseUnit(self._scope_info.handle)
-                try:
-                    assert_pico_ok(status)
-                except Exception:
-                    pass  # Ignore close errors
-        
+            driver = create_driver(self._scope_info)
+
+            # Stop any ongoing operations
+            try:
+                driver.stop()
+            except Exception:
+                pass  # Ignore errors if scope wasn't running
+
+            # Close the unit
+            try:
+                driver.close()
+            except Exception:
+                pass  # Ignore close errors
+
         finally:
             # Clear connection state
             self._scope_info = None
-            self._ps3000a = None
-            self._ps6000 = None
 
 
 # Global instance for application-wide scope connection
