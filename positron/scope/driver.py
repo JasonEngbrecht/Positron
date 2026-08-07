@@ -17,12 +17,16 @@ values differ for real (see docs/picosdk-python-wrappers-master/picosdk/).
 """
 
 import ctypes
-from typing import Optional, Protocol, Tuple
+from typing import List, Optional, Protocol, Tuple
 
 import numpy as np
 
-from picosdk.functions import assert_pico_ok
+from picosdk.functions import assert_pico_ok, mV2adc
 from positron.scope.connection import ScopeInfo
+
+
+# Channel name to index mapping (same on both series)
+CHANNEL_MAP = {'A': 0, 'B': 1, 'C': 2, 'D': 3}
 
 
 class ScopeDriver(Protocol):
@@ -45,6 +49,10 @@ class ScopeDriver(Protocol):
     def register_buffer(self, channel_idx: int, segment: int,
                         buffer_max: np.ndarray, buffer_min: np.ndarray,
                         num_samples: int) -> None: ...
+    def set_trigger_properties(self, channels: List[str], threshold_mv: float,
+                               hysteresis: int, auto_trigger_ms: int) -> None: ...
+    def set_trigger_conditions(self, condition_channel_lists: List[List[str]]) -> None: ...
+    def set_trigger_directions(self, channels: List[str]) -> None: ...
     def stop(self) -> None: ...
     def close(self) -> None: ...
 
@@ -182,6 +190,93 @@ class PS3000aDriver:
             0  # PS3000A_RATIO_MODE_NONE
         )
         assert_pico_ok(status)
+
+    def set_trigger_properties(self, channels: List[str], threshold_mv: float,
+                               hysteresis: int, auto_trigger_ms: int) -> None:
+        """
+        Set trigger threshold/hysteresis properties for participating channels.
+
+        Struct field names (thresholdUpperHysteresis etc.) are specific to the
+        PS3000a API - verified against the vendored picosdk source.
+        """
+        max_adc_ctypes = ctypes.c_int16(self.scope_info.max_adc)
+        threshold_adc = mV2adc(threshold_mv, self.voltage_range_code_100mv, max_adc_ctypes)
+
+        properties_array = (self.ps.PS3000A_TRIGGER_CHANNEL_PROPERTIES * len(channels))()
+        for i, channel_name in enumerate(channels):
+            properties_array[i].thresholdUpper = threshold_adc
+            properties_array[i].thresholdUpperHysteresis = hysteresis
+            properties_array[i].thresholdLower = threshold_adc
+            properties_array[i].thresholdLowerHysteresis = hysteresis
+            properties_array[i].channel = self.ps.PS3000A_CHANNEL[f"PS3000A_CHANNEL_{channel_name}"]
+            properties_array[i].thresholdMode = self.ps.PS3000A_THRESHOLD_MODE["PS3000A_LEVEL"]
+
+        status = self.ps.ps3000aSetTriggerChannelProperties(
+            self.handle,
+            ctypes.byref(properties_array),
+            len(channels),
+            0,  # auxOutputEnabled (not used)
+            auto_trigger_ms
+        )
+        try:
+            assert_pico_ok(status)
+        except Exception as e:
+            raise RuntimeError(f"Failed to set trigger properties: {e}")
+
+    def set_trigger_conditions(self, condition_channel_lists: List[List[str]]) -> None:
+        """
+        Set trigger conditions: OR logic between condition structs, AND logic
+        between the channels within each struct.
+        """
+        dont_care = self.ps.PS3000A_TRIGGER_STATE["PS3000A_CONDITION_DONT_CARE"]
+        cond_true = self.ps.PS3000A_TRIGGER_STATE["PS3000A_CONDITION_TRUE"]
+
+        conditions_array = (self.ps.PS3000A_TRIGGER_CONDITIONS_V2 * len(condition_channel_lists))()
+        for i, channel_names in enumerate(condition_channel_lists):
+            conditions_array[i].channelA = dont_care
+            conditions_array[i].channelB = dont_care
+            conditions_array[i].channelC = dont_care
+            conditions_array[i].channelD = dont_care
+            conditions_array[i].external = dont_care
+            conditions_array[i].aux = dont_care
+            conditions_array[i].pulseWidthQualifier = dont_care
+            conditions_array[i].digital = dont_care
+
+            for channel_name in channel_names:
+                setattr(conditions_array[i], f"channel{channel_name}", cond_true)
+
+        status = self.ps.ps3000aSetTriggerChannelConditionsV2(
+            self.handle,
+            ctypes.byref(conditions_array),
+            len(condition_channel_lists)
+        )
+        try:
+            assert_pico_ok(status)
+        except Exception as e:
+            raise RuntimeError(f"Failed to set trigger conditions: {e}")
+
+    def set_trigger_directions(self, channels: List[str]) -> None:
+        """Set falling-edge direction for participating channels, NONE elsewhere."""
+        none_dir = self.ps.PS3000A_THRESHOLD_DIRECTION["PS3000A_NONE"]
+        falling = self.ps.PS3000A_THRESHOLD_DIRECTION["PS3000A_FALLING"]
+
+        directions = {name: (falling if name in channels else none_dir)
+                      for name in ('A', 'B', 'C', 'D')}
+
+        # Note: External must be set to a valid direction (not NONE) even if not used
+        status = self.ps.ps3000aSetTriggerChannelDirections(
+            self.handle,
+            directions['A'],
+            directions['B'],
+            directions['C'],
+            directions['D'],
+            self.ps.PS3000A_THRESHOLD_DIRECTION["PS3000A_RISING"],  # external
+            self.ps.PS3000A_THRESHOLD_DIRECTION["PS3000A_NONE"]  # aux
+        )
+        try:
+            assert_pico_ok(status)
+        except Exception as e:
+            raise RuntimeError(f"Failed to set trigger directions: {e}")
 
     def stop(self) -> None:
         status = self.ps.ps3000aStop(self.handle)
@@ -339,6 +434,92 @@ class PS6000Driver:
             0  # PS6000_RATIO_MODE_NONE
         )
         assert_pico_ok(status)
+
+    def set_trigger_properties(self, channels: List[str], threshold_mv: float,
+                               hysteresis: int, auto_trigger_ms: int) -> None:
+        """
+        Set trigger threshold/hysteresis properties for participating channels.
+
+        Struct field names (hysteresisUpper etc.) differ from the PS3000a API
+        for real - verified against the vendored picosdk source.
+        """
+        max_adc_ctypes = ctypes.c_int16(self.scope_info.max_adc)
+        threshold_adc = mV2adc(threshold_mv, self.voltage_range_code_100mv, max_adc_ctypes)
+
+        properties_array = (self.ps.PS6000_TRIGGER_CHANNEL_PROPERTIES * len(channels))()
+        for i, channel_name in enumerate(channels):
+            properties_array[i].thresholdUpper = threshold_adc
+            properties_array[i].hysteresisUpper = hysteresis
+            properties_array[i].thresholdLower = threshold_adc
+            properties_array[i].hysteresisLower = hysteresis
+            properties_array[i].channel = CHANNEL_MAP[channel_name]  # numeric codes
+            properties_array[i].thresholdMode = 0  # PS6000_LEVEL
+
+        status = self.ps.ps6000SetTriggerChannelProperties(
+            self.handle,
+            ctypes.byref(properties_array),
+            len(channels),
+            0,  # auxOutputEnabled (not used)
+            auto_trigger_ms
+        )
+        try:
+            assert_pico_ok(status)
+        except Exception as e:
+            raise RuntimeError(f"Failed to set trigger properties: {e}")
+
+    def set_trigger_conditions(self, condition_channel_lists: List[List[str]]) -> None:
+        """
+        Set trigger conditions: OR logic between condition structs, AND logic
+        between the channels within each struct.
+        """
+        # PS6000_CONDITION_DONT_CARE = 0, PS6000_CONDITION_TRUE = 1
+        conditions_array = (self.ps.PS6000_TRIGGER_CONDITIONS * len(condition_channel_lists))()
+        for i, channel_names in enumerate(condition_channel_lists):
+            conditions_array[i].channelA = 0
+            conditions_array[i].channelB = 0
+            conditions_array[i].channelC = 0
+            conditions_array[i].channelD = 0
+            conditions_array[i].external = 0
+            conditions_array[i].aux = 0
+            conditions_array[i].pulseWidthQualifier = 0
+
+            for channel_name in channel_names:
+                setattr(conditions_array[i], f"channel{channel_name}", 1)
+
+        status = self.ps.ps6000SetTriggerChannelConditions(
+            self.handle,
+            ctypes.byref(conditions_array),
+            len(condition_channel_lists)
+        )
+        try:
+            assert_pico_ok(status)
+        except Exception as e:
+            raise RuntimeError(f"Failed to set trigger conditions: {e}")
+
+    def set_trigger_directions(self, channels: List[str]) -> None:
+        """Set falling-edge direction for participating channels, NONE elsewhere."""
+        # PS6000_THRESHOLD_DIRECTION literals: NONE = 2 (alias of RISING),
+        # FALLING = 3. These are the PS6000's own values - do not share with
+        # the PS3000a enum, whose NONE differs.
+        none_dir = 2
+        falling = 3
+
+        directions = {name: (falling if name in channels else none_dir)
+                      for name in ('A', 'B', 'C', 'D')}
+
+        status = self.ps.ps6000SetTriggerChannelDirections(
+            self.handle,
+            directions['A'],
+            directions['B'],
+            directions['C'],
+            directions['D'],
+            2,  # external: RISING - required even if not used
+            2   # aux: NONE
+        )
+        try:
+            assert_pico_ok(status)
+        except Exception as e:
+            raise RuntimeError(f"Failed to set trigger directions: {e}")
 
     def stop(self) -> None:
         status = self.ps.ps6000Stop(self.handle)
