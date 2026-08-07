@@ -7,7 +7,7 @@ designed for event-mode data collection at rates up to 10,000 events/second.
 
 import ctypes
 import time
-from typing import Optional, Dict, Protocol, Any, List
+from typing import Optional, Dict, Protocol, Any, List, Tuple
 from dataclasses import dataclass
 
 import numpy as np
@@ -183,8 +183,10 @@ class PS3000aAcquisitionEngine(QThread):
                 self.msleep(1)
             
         except Exception as e:
-            self.acquisition_error.emit(f"Acquisition error: {str(e)}")
-        
+            import traceback
+            error_details = f"Acquisition error: {str(e)}\n{traceback.format_exc()}"
+            self.acquisition_error.emit(error_details)
+
         finally:
             # Cleanup
             self._cleanup()
