@@ -73,11 +73,12 @@ class PS3000aAcquisitionEngine(QThread):
         sample_interval_ns: float = 8.0,
         voltage_range_code: int = 3,  # Should match channel configuration (3 = PS3000A_100MV)
         max_adc: int = 32512,
-        cfd_fraction: float = 0.5
+        cfd_fraction: float = 0.5,
+        timebase_index: int = 0
     ):
         """
         Initialize the acquisition engine.
-        
+
         Args:
             scope_info: Information about the connected scope
             event_storage: Global event storage for processed events
@@ -88,6 +89,7 @@ class PS3000aAcquisitionEngine(QThread):
             voltage_range_code: PicoScope voltage range code (MUST match channel config: 3 = PS3000A_100MV)
             max_adc: Maximum ADC count for voltage conversion
             cfd_fraction: Constant fraction for CFD timing (0-1)
+            timebase_index: Timebase index from configurator
         """
         super().__init__()
         
@@ -124,32 +126,12 @@ class PS3000aAcquisitionEngine(QThread):
             'D': 3,  # PS3000A_CHANNEL_D
         }
         
-        # Timebase (calculated from sample interval)
-        self._timebase = self._calculate_timebase()
-        
+        # Timebase validated by the configurator (must match sample_interval_ns)
+        self._timebase = timebase_index
+
         # Statistics
         self.total_captures = 0
-    
-    def _calculate_timebase(self) -> int:
-        """
-        Calculate timebase index from sample interval.
-        
-        For PS3000a with sample interval in ns:
-        - Timebase 0-2: Special fast timebases
-        - Timebase >= 3: interval = (timebase - 2) * sample_period
-        
-        Returns:
-            Timebase index
-        """
-        # For 8 ns interval (125 MS/s), timebase = 2
-        # For 16 ns interval (62.5 MS/s), timebase = 3
-        # This is a simplified calculation - actual timebase should come from configurator
-        if self.sample_interval_ns <= 8:
-            return 2
-        else:
-            # Approximate for higher timebases
-            return int(self.sample_interval_ns / 8) + 2
-    
+
     def run(self) -> None:
         """
         Main acquisition loop (runs in separate thread).
@@ -828,7 +810,7 @@ def create_acquisition_engine(
         voltage_range_code: Voltage range code (MUST match channel config from configurator)
         max_adc: Maximum ADC count (uses scope_info.max_adc if None)
         cfd_fraction: Constant fraction for CFD timing (default: 0.5)
-        timebase_index: Timebase index from configurator (used by PS6000a)
+        timebase_index: Timebase index from configurator (used by both series)
     
     Returns:
         Appropriate acquisition engine instance
@@ -849,7 +831,8 @@ def create_acquisition_engine(
             sample_interval_ns=sample_interval_ns,
             voltage_range_code=voltage_range_code,
             max_adc=max_adc,
-            cfd_fraction=cfd_fraction
+            cfd_fraction=cfd_fraction,
+            timebase_index=timebase_index
         )
     elif scope_info.series == "6000":
         return PS6000AcquisitionEngine(
