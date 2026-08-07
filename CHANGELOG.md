@@ -5,6 +5,15 @@ All notable changes to Positron are documented here.
 ## [Unreleased]
 
 ### Changed
+- Scope-layer refactor: series-specific SDK calls consolidated into a new
+  driver adapter (`positron/scope/driver.py`); the configurator, trigger
+  configurator, and acquisition engine are now single shared classes
+  (~1,100 lines of duplicated code removed). No intended behavior changes.
+- PS3000a acquisition now uses the configurator-validated timebase instead
+  of a local heuristic
+- Acquisition thread teardown now waits for the old thread to exit before
+  creating a new engine (fixes a latent crash risk on rapid pause/resume)
+- Failed scope-connection attempts are logged instead of silently swallowed
 - Added `run.bat` for quick launches from source
 - Normalized line endings via `.gitattributes`; removed compiled `.pyc` files from version control
 - Added `CLAUDE.md` developer context file

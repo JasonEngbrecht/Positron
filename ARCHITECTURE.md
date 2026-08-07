@@ -192,41 +192,60 @@ offset = E1_keV - gain * E1_raw
 
 ## Hardware Abstraction
 
-### Protocol-Based Design
+### Driver-Adapter Design
 
-Different PicoScope series have different APIs. We use Python protocols (duck typing) to abstract:
+Different PicoScope series have different APIs. All series-specific SDK calls
+are concentrated in one place: `positron/scope/driver.py`. Each driver wraps
+an open scope handle plus its picosdk module and exposes a unified interface
+(`ScopeDriver` Protocol):
 
 ```python
-class ScopeConfigurator(Protocol):
-    def configure(self, handle, config) -> ScopeSettings: ...
+class ScopeDriver(Protocol):
+    series: str
+    voltage_range_code_100mv: int
+    default_batch_size: int
 
-class TriggerConfigurator(Protocol):
-    def configure_trigger(self, handle, conditions) -> None: ...
-
-class AcquisitionEngine(Protocol):
-    def start(self) -> None: ...
-    def stop(self) -> None: ...
+    def set_channel(self, channel_idx) -> None: ...          # coupling/bandwidth differences live here
+    def get_timebase2(self, timebase) -> Optional[Tuple]: ...
+    def run_block(self, pre, post, timebase) -> None: ...
+    def register_buffer(self, ...) -> None: ...              # SetDataBuffers vs SetDataBufferBulk
+    def set_trigger_properties(self, ...) -> None: ...       # different struct field names per series
+    # ... plus is_ready, get_values_bulk, stop, close, etc.
 ```
 
-**Factory Pattern**: `create_configurator(series: str)` returns appropriate implementation
+The configurator (`configuration.py`), trigger configurator (`trigger.py`),
+and acquisition engine (`acquisition.py`) are each a SINGLE class consuming a
+driver — the shared logic (timebase search, capture loop, pulse processing)
+exists exactly once.
+
+**Factory Pattern**: `create_driver(scope_info)` returns `PS3000aDriver` or
+`PS6000Driver`; the `create_configurator` / `create_trigger_configurator` /
+`create_acquisition_engine` factories build the right driver internally.
 
 ### PicoScope 3000a vs 6000 Series
 
 | Feature | PS3000a | PS6000 |
 |---------|---------|--------|
-| **Input Impedance** | 1 MΩ fixed | 1 MΩ (software 50 Ω on 6000a) |
+| **Input Coupling** | DC, 1 MΩ (external 50 Ω terminators needed) | DC, 50 Ω (set in software) |
 | **Resolution** | 8-bit fixed | 8-bit fixed |
 | **Sample Rate** | 250 MS/s (4ch) | 1.25 GS/s (4ch) |
 | **Batch Size** | 10 captures | 20 captures |
-| **API Style** | Series-specific enums | Generic PICO_* enums |
-| **Timebase** | Iterative search | Stateless calculation |
+| **Max ADC** | Queried via `MaximumValue` | Fixed 32512 (no API call) |
+| **Buffer Registration** | max/min pair per (channel, segment) | single buffer per (channel, waveform) |
+| **Trigger Structs** | `thresholdUpperHysteresis` fields, ConditionsV2 with `digital` | `hysteresisUpper` fields, plain Conditions |
 
-**Key Difference**: PS6000a can set 50 Ω in software, PS3000a requires external terminators (BNC T + 50 Ω resistor).
+**Deliberately NOT unified** (each driver owns its own structs, enums, and
+magic numbers): trigger struct population, channel coupling/bandwidth,
+buffer registration, and connection/power handling. The "NONE" trigger
+direction value even differs between the series' enums. Verify struct
+layouts against `docs/picosdk-python-wrappers-master/picosdk/` before
+touching driver code — ctypes structs silently accept typo'd field names.
 
-**Code**: 
-- `positron/scope/configuration.py` - PS3000aConfigurator, PS6000Configurator
-- `positron/scope/trigger.py` - PS3000aTriggerConfigurator, PS6000TriggerConfigurator
-- `positron/scope/acquisition.py` - PS3000aAcquisitionEngine, PS6000AcquisitionEngine
+**Code**:
+- `positron/scope/driver.py` - ScopeDriver Protocol, PS3000aDriver, PS6000Driver
+- `positron/scope/configuration.py` - ScopeConfigurator (shared logic)
+- `positron/scope/trigger.py` - TriggerConfigurator (shared logic)
+- `positron/scope/acquisition.py` - AcquisitionEngine (shared logic)
 
 ---
 
@@ -239,9 +258,10 @@ positron/
 │
 ├── scope/              # Hardware abstraction layer
 │   ├── connection.py   # Auto-detection, open/close
-│   ├── configuration.py # Channel setup, sample rate
-│   ├── trigger.py      # Trigger logic configuration
-│   └── acquisition.py  # Rapid block capture engine
+│   ├── driver.py       # Series-specific SDK adapters (PS3000a / PS6000)
+│   ├── configuration.py # Channel setup, sample rate (series-agnostic)
+│   ├── trigger.py      # Trigger logic configuration (series-agnostic)
+│   └── acquisition.py  # Rapid block capture engine (series-agnostic)
 │
 ├── processing/         # Signal processing
 │   ├── pulse.py        # CFD, energy, baseline algorithms
@@ -333,10 +353,15 @@ positron/
 - **Chosen**: Simpler, no queue management, processing faster than acquisition
 - **Tradeoff**: If processing becomes bottleneck, queue-based can be added
 
-### Why Protocol-Based Hardware Abstraction?
-- **Alternative**: Inheritance (PS3000a inherits from BaseScope)
-- **Chosen**: More Pythonic, easier to test, no "base class" complexity
-- **Pattern**: Each series gets its own implementation, factory selects at runtime
+### Why Driver-Adapter Hardware Abstraction?
+- **Alternatives**: Parallel per-series classes for configurator/trigger/engine
+  (the original design — drifted apart in practice); base-class hierarchies
+  (awkward combined with QThread inheritance)
+- **Chosen**: One thin driver per series holding every SDK difference; a single
+  shared implementation of each higher-level component consumes it
+- **Payoff**: The capture loop, timebase search, and trigger orchestration are
+  written once — a fix applies to all series; adding a series means writing
+  one driver class
 
 ### Why JSON for Configuration?
 - **Alternatives**: INI (no nested structures), YAML (external dependency), pickle (not human-readable)
@@ -400,13 +425,20 @@ positron/
 **Example**: Coincidence rate monitor, 2D energy-timing plots
 
 ### Adding New PicoScope Series
-1. Implement `ScopeConfigurator` protocol for new series
-2. Implement `TriggerConfigurator` protocol
-3. Implement `AcquisitionEngine` protocol
-4. Add factory case in `create_*` functions
+1. Add a connect path in `positron/scope/connection.py` (open unit, read
+   variant/serial/max ADC)
+2. Implement a new driver class in `positron/scope/driver.py` following the
+   `ScopeDriver` protocol (verify struct layouts against
+   `docs/picosdk-python-wrappers-master/picosdk/`)
+3. Add the series case to `create_driver()`
+4. Add the new module names to `positron.spec` hiddenimports if any files
+   are added
 5. Test with physical hardware
 
-**Example**: PS5000 series, PS4000 series
+The configurator, trigger configurator, and acquisition engine need no
+changes — they only talk to the driver.
+
+**Example**: PS5000 series, PS4000 series, PS6000a (newer API)
 
 ### Adding Data Export
 - Implement in `positron/processing/events.py`
@@ -449,6 +481,6 @@ cProfile.run('your_function()', 'output.prof')
 
 ---
 
-**Last Updated**: February 2026  
+**Last Updated**: August 2026  
 **Version**: 1.1.0  
 **Contributors**: See commit history
