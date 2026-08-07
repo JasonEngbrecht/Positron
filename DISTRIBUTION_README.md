@@ -176,7 +176,7 @@ Signal Source (Detector)
 
 ## About Positron
 
-**Version**: 1.1.0  
+**Version**: 1.2.0  
 **Compatible Hardware**: PicoScope 3000a and 6000 series  
 **License**: Educational and research use
 

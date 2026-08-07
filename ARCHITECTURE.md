@@ -482,5 +482,5 @@ cProfile.run('your_function()', 'output.prof')
 ---
 
 **Last Updated**: August 2026  
-**Version**: 1.1.0  
+**Version**: 1.2.0  
 **Contributors**: See commit history

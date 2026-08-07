@@ -2,7 +2,7 @@
 
 All notable changes to Positron are documented here.
 
-## [Unreleased]
+## [1.2.0] - 2026-08-07
 
 ### Changed
 - Scope-layer refactor: series-specific SDK calls consolidated into a new

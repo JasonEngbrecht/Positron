@@ -242,5 +242,5 @@ If users encounter issues with the executable:
 ---
 
 **Last Updated**: February 2026  
-**Application Version**: v1.1.0  
+**Application Version**: v1.2.0  
 **PyInstaller Version**: 6.0+
