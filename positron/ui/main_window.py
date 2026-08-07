@@ -29,7 +29,8 @@ class MainWindow(QMainWindow):
     
     Contains:
     - Home panel (default tab)
-    - Future: Calibration panel, Analysis panels
+    - Calibration panel
+    - Energy Display and Timing Display analysis panels
     """
     
     def __init__(self, app: PositronApp):

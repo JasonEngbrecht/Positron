@@ -1,7 +1,7 @@
 """
 Event storage management for high-rate data acquisition.
 
-Thread-safe storage for up to 10 million events with efficient
+Thread-safe storage for up to 1 million events with efficient
 memory management and concurrent access support.
 """
 
@@ -31,7 +31,7 @@ class EventStorage:
         Initialize event storage.
         
         Args:
-            max_capacity: Maximum number of events to store (default: 10 million)
+            max_capacity: Maximum number of events to store (default: 1 million)
         """
         self._events: List[EventData] = []
         self._mutex = QMutex()

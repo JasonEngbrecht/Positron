@@ -17,7 +17,8 @@ Positron is a Python-based application designed for pulse detection experiments 
 - **Advanced Pulse Analysis**: CFD timing (sub-nanosecond resolution) and energy integration
 - **Energy Calibration**: Interactive calibration using Na-22 gamma sources
 - **Analysis Panels**: Energy histograms and timing difference analysis
-- **Hardware Support**: PicoScope 3000a and 6000a series (tested on PS3406D MSO)
+- **Data Export**: Save events and histograms to CSV from the Home and analysis panels
+- **Hardware Support**: PicoScope 3000a and 6000 series (tested on PS3406D MSO)
 
 ## 📥 Downloads
 
@@ -38,7 +39,7 @@ Positron is a Python-based application designed for pulse detection experiments 
 Clone this repository and install from source:
 
 ```bash
-git clone https://github.com/YOUR_USERNAME/Positron.git
+git clone https://github.com/JasonEngbrecht/Positron.git
 cd Positron
 pip install -r requirements.txt
 python main.py
@@ -48,7 +49,7 @@ python main.py
 
 ### System Requirements
 - **OS**: Windows 10 or later (64-bit)
-- **Hardware**: PicoScope oscilloscope (3000a or 6000a series)
+- **Hardware**: PicoScope oscilloscope (3000a or 6000 series)
 - **RAM**: 4 GB minimum, 8 GB recommended
 - **Storage**: 500 MB for application + data
 
@@ -160,15 +161,17 @@ Special thanks to:
 ## 📧 Support
 
 For questions, issues, or contributions:
-- **Issues**: [GitHub Issues](https://github.com/YOUR_USERNAME/Positron/issues)
-- **Discussions**: [GitHub Discussions](https://github.com/YOUR_USERNAME/Positron/discussions)
+- **Issues**: [GitHub Issues](https://github.com/JasonEngbrecht/Positron/issues)
+- **Discussions**: [GitHub Discussions](https://github.com/JasonEngbrecht/Positron/discussions)
 - **Email**: [Your contact email]
 
 ## 🗺️ Roadmap
 
-- [ ] Export data to CSV/ROOT formats
+- [x] Export data to CSV (Home, Energy Display, and Timing Display panels)
+- [x] PicoScope 6000 series support
+- [ ] Export data to ROOT format
 - [ ] Additional analysis tools (2D histograms, peak fitting)
-- [ ] PicoScope 6000a series implementation
+- [ ] PicoScope 6000a-series API support (newer `ps6000a` driver)
 - [ ] macOS/Linux support
 - [ ] Automated calibration procedures
 
@@ -189,4 +192,4 @@ For questions, issues, or contributions:
 
 **Developed with ❤️ for nuclear physics education**
 
-*Last Updated: February 2026*
+*Last Updated: August 2026*
