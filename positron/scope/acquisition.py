@@ -7,13 +7,13 @@ designed for event-mode data collection at rates up to 10,000 events/second.
 
 import ctypes
 import time
-from typing import Optional, Dict, Protocol, Any, List, Tuple
+from typing import Optional, Dict, List, Tuple
 from dataclasses import dataclass
 
 import numpy as np
 from PySide6.QtCore import QThread, Signal, QMutex, QMutexLocker
 
-from picosdk.functions import assert_pico_ok, adc2mV
+from picosdk.functions import adc2mV
 from positron.scope.connection import ScopeInfo
 from positron.scope.driver import ScopeDriver, create_driver, CHANNEL_MAP
 from positron.processing.pulse import analyze_event, EventData
@@ -335,369 +335,6 @@ class AcquisitionEngine(QThread):
             return self._running
 
 
-class PS3000aAcquisitionEngine(QThread):
-    """
-    Acquisition engine for PS3000a series oscilloscopes.
-    
-    Uses rapid block mode to capture batches of triggered waveforms.
-    Runs in a separate thread to avoid blocking the UI.
-    """
-    
-    # Signals
-    waveform_ready = Signal(WaveformBatch)  # Emitted when new waveforms available
-    batch_complete = Signal(int)  # Emitted after each batch (with capture count)
-    acquisition_error = Signal(str)  # Emitted on error
-    acquisition_finished = Signal()  # Emitted when acquisition stops
-    storage_warning = Signal(str)  # Emitted when storage approaching limit
-    
-    def __init__(
-        self,
-        scope_info: ScopeInfo,
-        event_storage: EventStorage,
-        batch_size: int = 10,
-        sample_count: int = 375,
-        pre_trigger_samples: int = 125,
-        sample_interval_ns: float = 8.0,
-        voltage_range_code: int = 3,  # Should match channel configuration (3 = PS3000A_100MV)
-        max_adc: int = 32512,
-        cfd_fraction: float = 0.5,
-        timebase_index: int = 0
-    ):
-        """
-        Initialize the acquisition engine.
-
-        Args:
-            scope_info: Information about the connected scope
-            event_storage: Global event storage for processed events
-            batch_size: Number of captures per batch (rapid block segments)
-            sample_count: Total samples per capture
-            pre_trigger_samples: Number of pre-trigger samples
-            sample_interval_ns: Sample interval in nanoseconds
-            voltage_range_code: PicoScope voltage range code (MUST match channel config: 3 = PS3000A_100MV)
-            max_adc: Maximum ADC count for voltage conversion
-            cfd_fraction: Constant fraction for CFD timing (0-1)
-            timebase_index: Timebase index from configurator
-        """
-        super().__init__()
-        
-        self.scope_info = scope_info
-        self.ps = scope_info.api_module
-        self.handle = scope_info.handle
-        
-        # Event storage
-        self.event_storage = event_storage
-        
-        # Acquisition parameters
-        self.batch_size = batch_size
-        self.sample_count = sample_count
-        self.pre_trigger_samples = pre_trigger_samples
-        self.post_trigger_samples = sample_count - pre_trigger_samples
-        self.sample_interval_ns = sample_interval_ns
-        self.voltage_range_code = voltage_range_code
-        self.max_adc = max_adc
-        self.cfd_fraction = cfd_fraction
-        
-        # State management
-        self._mutex = QMutex()
-        self._running = False
-        self._stop_requested = False
-        
-        # Buffers (allocated once, reused for all batches)
-        self._buffers: Optional[Dict[str, np.ndarray]] = None
-        
-        # Channel configuration (all 4 channels)
-        self._channels = {
-            'A': 0,  # PS3000A_CHANNEL_A
-            'B': 1,  # PS3000A_CHANNEL_B
-            'C': 2,  # PS3000A_CHANNEL_C
-            'D': 3,  # PS3000A_CHANNEL_D
-        }
-        
-        # Timebase validated by the configurator (must match sample_interval_ns)
-        self._timebase = timebase_index
-
-        # Statistics
-        self.total_captures = 0
-
-    def run(self) -> None:
-        """
-        Main acquisition loop (runs in separate thread).
-        
-        This method is called automatically when the thread starts.
-        """
-        try:
-            # Setup rapid block mode
-            self._setup_rapid_block()
-            
-            # Allocate buffers
-            self._allocate_buffers()
-            
-            # Register buffers with scope
-            self._register_buffers()
-            
-            # Main acquisition loop
-            while True:
-                with QMutexLocker(self._mutex):
-                    if self._stop_requested:
-                        break
-                
-                # Capture a batch
-                success = self._capture_batch()
-                
-                if not success:
-                    # Error occurred or stop requested
-                    break
-                
-                # Small delay to prevent CPU thrashing
-                self.msleep(1)
-            
-        except Exception as e:
-            import traceback
-            error_details = f"Acquisition error: {str(e)}\n{traceback.format_exc()}"
-            self.acquisition_error.emit(error_details)
-
-        finally:
-            # Cleanup
-            self._cleanup()
-            with QMutexLocker(self._mutex):
-                self._running = False
-            self.acquisition_finished.emit()
-    
-    def _setup_rapid_block(self) -> None:
-        """Configure the scope for rapid block mode."""
-        status = {}
-        
-        # Set up memory segments
-        max_samples = ctypes.c_int32(self.sample_count)
-        status["MemorySegments"] = self.ps.ps3000aMemorySegments(
-            self.handle,
-            self.batch_size,
-            ctypes.byref(max_samples)
-        )
-        assert_pico_ok(status["MemorySegments"])
-        
-        # Set number of captures
-        status["SetNoOfCaptures"] = self.ps.ps3000aSetNoOfCaptures(
-            self.handle,
-            self.batch_size
-        )
-        assert_pico_ok(status["SetNoOfCaptures"])
-    
-    def _allocate_buffers(self) -> None:
-        """Allocate NumPy arrays for waveform data."""
-        self._buffers = {}
-        
-        # Create buffers for each channel and each segment
-        for channel_name in self._channels.keys():
-            # Each channel needs batch_size separate buffers (one per segment)
-            self._buffers[channel_name] = []
-            for segment in range(self.batch_size):
-                buffer_max = np.empty(self.sample_count, dtype=np.int16)
-                buffer_min = np.empty(self.sample_count, dtype=np.int16)
-                self._buffers[channel_name].append((buffer_max, buffer_min))
-    
-    def _register_buffers(self) -> None:
-        """Register all buffers with the scope."""
-        status = {}
-        
-        for channel_name, channel_code in self._channels.items():
-            for segment in range(self.batch_size):
-                buffer_max, buffer_min = self._buffers[channel_name][segment]
-                
-                status[f"SetDataBuffers_{channel_name}_{segment}"] = self.ps.ps3000aSetDataBuffers(
-                    self.handle,
-                    channel_code,
-                    buffer_max.ctypes.data,
-                    buffer_min.ctypes.data,
-                    self.sample_count,
-                    segment,
-                    0  # PS3000A_RATIO_MODE_NONE
-                )
-                assert_pico_ok(status[f"SetDataBuffers_{channel_name}_{segment}"])
-    
-    def _capture_batch(self) -> bool:
-        """
-        Capture one batch of waveforms.
-        
-        Returns:
-            True if successful, False if error or stop requested
-        """
-        status = {}
-        
-        try:
-            # Start the block capture
-            status["RunBlock"] = self.ps.ps3000aRunBlock(
-                self.handle,
-                ctypes.c_int32(self.pre_trigger_samples),
-                ctypes.c_int32(self.post_trigger_samples),
-                ctypes.c_uint32(self._timebase),
-                ctypes.c_int16(1),  # oversample (not used)
-                None,  # time indisposed
-                ctypes.c_uint32(0),  # segment index (0 for rapid block)
-                None,  # lpReady callback
-                None  # pParameter
-            )
-            assert_pico_ok(status["RunBlock"])
-            
-            # Wait for all captures to complete
-            ready = ctypes.c_int16(0)
-            check = ctypes.c_int16(0)
-            
-            # Poll until ready (with timeout)
-            max_polls = 10000  # ~10 second timeout
-            polls = 0
-            while ready.value == check.value:
-                # Check for stop request
-                with QMutexLocker(self._mutex):
-                    if self._stop_requested:
-                        return False
-                
-                status["IsReady"] = self.ps.ps3000aIsReady(self.handle, ctypes.byref(ready))
-                # Note: ps3000aIsReady returns a status code, but we only care about ready.value
-                polls += 1
-                if polls > max_polls:
-                    self.acquisition_error.emit("Timeout waiting for triggers")
-                    return False
-                
-                # Small delay
-                self.msleep(1)
-            
-            # Retrieve data from all segments
-            overflow = (ctypes.c_int16 * self.batch_size)()
-            num_samples = ctypes.c_int32(self.sample_count)
-            
-            status["GetValuesBulk"] = self.ps.ps3000aGetValuesBulk(
-                self.handle,
-                ctypes.byref(num_samples),
-                ctypes.c_uint32(0),  # from segment
-                ctypes.c_uint32(self.batch_size - 1),  # to segment
-                ctypes.c_uint32(1),  # downsample ratio
-                ctypes.c_int32(0),  # downsample ratio mode (none)
-                ctypes.byref(overflow)
-            )
-            assert_pico_ok(status["GetValuesBulk"])
-            
-            # Create time array in nanoseconds (relative to trigger)
-            time_ns = np.arange(self.sample_count) * self.sample_interval_ns
-            time_ns -= self.pre_trigger_samples * self.sample_interval_ns  # Trigger at t=0
-            
-            # Process each segment in the batch
-            max_adc_ctypes = ctypes.c_int16(self.max_adc)
-            events_to_store: List[EventData] = []
-            
-            for segment_idx in range(self.batch_size):
-                # Convert ADC to mV for this segment
-                segment_waveforms = {}
-                for channel_name, channel_code in self._channels.items():
-                    buffer_max, _ = self._buffers[channel_name][segment_idx]
-                    waveform_mv = adc2mV(
-                        buffer_max,
-                        self.voltage_range_code,
-                        max_adc_ctypes
-                    )
-                    # Ensure it's a numpy array (adc2mV sometimes returns list)
-                    segment_waveforms[channel_name] = np.asarray(waveform_mv)
-                
-                # Analyze this event
-                event_id = self.event_storage.get_next_event_id()
-                timestamp = time.time()
-                
-                event_data = analyze_event(
-                    time_ns=time_ns,
-                    waveforms={},  # Not used by analyze_event
-                    segment_waveforms=segment_waveforms,
-                    event_id=event_id,
-                    timestamp=timestamp,
-                    pre_trigger_samples=self.pre_trigger_samples,
-                    sample_interval_ns=self.sample_interval_ns,
-                    cfd_fraction=self.cfd_fraction
-                )
-                
-                events_to_store.append(event_data)
-            
-            # Store all events from this batch
-            num_added = self.event_storage.add_events(events_to_store)
-            
-            # Check storage capacity
-            if num_added < len(events_to_store):
-                self.storage_warning.emit(
-                    f"Event storage full! Only {num_added} of {len(events_to_store)} events stored."
-                )
-                return False  # Stop acquisition if storage is full
-            
-            # Warn if approaching capacity (>90%)
-            fill_pct = self.event_storage.get_fill_percentage()
-            if fill_pct > 90.0 and fill_pct < 95.0:
-                self.storage_warning.emit(
-                    f"Event storage {fill_pct:.1f}% full ({self.event_storage.get_count():,} events)"
-                )
-            
-            # Prepare display waveform (first segment)
-            waveforms_mv = {}
-            for channel_name, channel_code in self._channels.items():
-                buffer_max, _ = self._buffers[channel_name][0]  # First segment
-                waveform_mv = adc2mV(
-                    buffer_max,
-                    self.voltage_range_code,
-                    max_adc_ctypes
-                )
-                # Ensure it's a numpy array (adc2mV sometimes returns list)
-                waveforms_mv[channel_name] = np.asarray(waveform_mv)
-            
-            # Update statistics
-            self.total_captures += self.batch_size
-            
-            # Emit signals
-            batch = WaveformBatch(
-                time_ns=time_ns,
-                waveforms=waveforms_mv,
-                num_captures=self.batch_size,
-                segment_index=0
-            )
-            self.waveform_ready.emit(batch)
-            self.batch_complete.emit(num_added)  # Emit actual number of events stored
-            
-            return True
-            
-        except Exception as e:
-            import traceback
-            error_details = f"Error capturing batch: {str(e)}\n{traceback.format_exc()}"
-            self.acquisition_error.emit(error_details)
-            return False
-    
-    def _cleanup(self) -> None:
-        """Clean up resources after acquisition stops."""
-        # Stop the scope
-        try:
-            status = self.ps.ps3000aStop(self.handle)
-            assert_pico_ok(status)
-        except:
-            pass  # Ignore errors during cleanup
-    
-    def start(self) -> None:
-        """Start the acquisition thread."""
-        with QMutexLocker(self._mutex):
-            if self._running:
-                return  # Already running
-            
-            self._running = True
-            self._stop_requested = False
-            self.total_captures = 0
-        
-        # Start the thread (calls run())
-        super().start()
-    
-    def stop(self) -> None:
-        """Request the acquisition thread to stop."""
-        with QMutexLocker(self._mutex):
-            self._stop_requested = True
-    
-    def is_running(self) -> bool:
-        """Check if acquisition is currently active."""
-        with QMutexLocker(self._mutex):
-            return self._running
-
-
 def create_acquisition_engine(
     scope_info: ScopeInfo,
     event_storage: EventStorage,
@@ -709,7 +346,7 @@ def create_acquisition_engine(
     max_adc: Optional[int] = None,
     cfd_fraction: float = 0.5,
     timebase_index: int = 0
-) -> QThread:
+) -> AcquisitionEngine:
     """
     Factory function to create the appropriate acquisition engine for the scope series.
     
@@ -726,39 +363,23 @@ def create_acquisition_engine(
         timebase_index: Timebase index from configurator (used by both series)
     
     Returns:
-        Appropriate acquisition engine instance
-    
+        Acquisition engine using the appropriate driver for the scope series
+
     Raises:
-        ValueError: If scope series is not supported
+        ValueError: If scope series is not supported (raised by create_driver)
     """
     if max_adc is None:
         max_adc = scope_info.max_adc
-    
-    if scope_info.series == "3000a":
-        return AcquisitionEngine(
-            scope_info=scope_info,
-            event_storage=event_storage,
-            batch_size=batch_size,
-            sample_count=sample_count,
-            pre_trigger_samples=pre_trigger_samples,
-            sample_interval_ns=sample_interval_ns,
-            voltage_range_code=voltage_range_code,
-            max_adc=max_adc,
-            cfd_fraction=cfd_fraction,
-            timebase_index=timebase_index
-        )
-    elif scope_info.series == "6000":
-        return AcquisitionEngine(
-            scope_info=scope_info,
-            event_storage=event_storage,
-            batch_size=batch_size,
-            sample_count=sample_count,
-            pre_trigger_samples=pre_trigger_samples,
-            sample_interval_ns=sample_interval_ns,
-            voltage_range_code=voltage_range_code,
-            max_adc=max_adc,
-            cfd_fraction=cfd_fraction,
-            timebase_index=timebase_index
-        )
-    else:
-        raise ValueError(f"Unsupported scope series: {scope_info.series}")
+
+    return AcquisitionEngine(
+        scope_info=scope_info,
+        event_storage=event_storage,
+        batch_size=batch_size,
+        sample_count=sample_count,
+        pre_trigger_samples=pre_trigger_samples,
+        sample_interval_ns=sample_interval_ns,
+        voltage_range_code=voltage_range_code,
+        max_adc=max_adc,
+        cfd_fraction=cfd_fraction,
+        timebase_index=timebase_index
+    )
