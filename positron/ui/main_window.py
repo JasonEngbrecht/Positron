@@ -81,15 +81,15 @@ class MainWindow(QMainWindow):
         self.home_panel = HomePanel(self.app)
         self.tabs.addTab(self.home_panel, "Home")
         
-        # Energy Display panel (Phase 5)
+        # Energy Display panel
         self.energy_panel = EnergyDisplayPanel(self.app)
         self.tabs.addTab(self.energy_panel, "Energy Display")
         
-        # Timing Display panel (Phase 5)
+        # Timing Display panel
         self.timing_panel = TimingDisplayPanel(self.app)
         self.tabs.addTab(self.timing_panel, "Timing Display")
         
-        # Calibration panel (Phase 4) - last tab for workflow
+        # Calibration panel - last tab for workflow
         self.calibration_panel = CalibrationPanel(self.app)
         self.tabs.addTab(self.calibration_panel, "Calibration")
     

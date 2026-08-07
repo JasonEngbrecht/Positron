@@ -166,7 +166,7 @@ class ScopeConfig:
     """Configuration for oscilloscope settings."""
     
     # Scope identification
-    scope_series: Optional[str] = None  # "3000a" or "6000a"
+    scope_series: Optional[str] = None  # "3000a" or "6000"
     last_variant: Optional[str] = None  # Last connected variant (e.g., "3406D MSO")
     last_serial: Optional[str] = None  # Last connected serial number
     
@@ -176,13 +176,13 @@ class ScopeConfig:
     waveform_length: int = 375  # Total number of samples (calculated from sample rate and 3 µs)
     pre_trigger_samples: int = 125  # Pre-trigger sample count (calculated from sample rate and 1 µs)
     sample_rate: Optional[float] = None  # Achieved sample rate in Hz (e.g., 125000000.0 for 125 MS/s)
-    voltage_range_code: int = 3  # Voltage range code used (3 = PS3000A_100MV for PS3000a, 5 for PS6000a)
+    voltage_range_code: int = 3  # Series range code for 100 mV (3 on both PS3000a and PS6000)
     timebase_index: int = 0  # Timebase index found by the configurator (both series)
     
     # Trigger configuration
     trigger: TriggerConfig = field(default_factory=TriggerConfig.create_default)
     
-    # Energy calibration (Phase 4)
+    # Energy calibration
     calibration_a: ChannelCalibration = field(default_factory=ChannelCalibration)
     calibration_b: ChannelCalibration = field(default_factory=ChannelCalibration)
     calibration_c: ChannelCalibration = field(default_factory=ChannelCalibration)
@@ -273,7 +273,7 @@ class AppConfig:
     default_batch_size: int = 10  # Number of captures per batch in rapid block mode
     max_event_count: int = 1000000  # Maximum events before auto-stop (safety limit)
     
-    # Phase 3: Processing parameters
+    # Processing parameters
     cfd_fraction: float = 0.5  # Constant fraction for timing (0-1)
     max_events: int = 1_000_000  # Hard limit on event storage (~700 MB memory)
     # Note: Can be increased if needed, but memory usage is ~750 bytes/event

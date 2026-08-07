@@ -6,7 +6,7 @@ This script handles application startup:
 - Detects and connects to PicoScope hardware
 - Shows startup dialogs and error messages
 - Initializes the PositronApp state manager
-- Launches the main window (Phase 2+)
+- Launches the main window
 
 Run this file to start Positron: python main.py
 """
@@ -74,7 +74,7 @@ def main():
         # Register the scope connection
         positron_app.connect_scope(scope_info)
         
-        # Phase 1.3: Apply scope configuration
+        # Apply scope configuration
         try:
             configurator = create_configurator(scope_info)
             configurator.apply_configuration()
@@ -106,7 +106,7 @@ def main():
             positron_app.disconnect_scope()
             return 1
         
-        # Phase 1.4: Apply saved trigger configuration
+        # Apply saved trigger configuration
         try:
             
             # Apply saved trigger configuration to scope
@@ -127,7 +127,7 @@ def main():
             positron_app.disconnect_scope()
             return 1
         
-        # Phase 2: Create and show main window
+        # Create and show main window
         main_window = MainWindow(positron_app)
         main_window.show()
         
