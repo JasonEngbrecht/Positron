@@ -23,7 +23,6 @@ from PySide6.QtGui import QFont, QShowEvent
 
 from positron.app import PositronApp
 from positron.ui.histogram_plot import HistogramPlot
-from positron.scope.acquisition import create_acquisition_engine
 from positron.calibration.energy import (
     find_peak_center_weighted_mean,
     calculate_two_point_calibration,

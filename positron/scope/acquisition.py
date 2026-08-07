@@ -338,7 +338,7 @@ class AcquisitionEngine(QThread):
 def create_acquisition_engine(
     scope_info: ScopeInfo,
     event_storage: EventStorage,
-    batch_size: int,
+    batch_size: Optional[int],
     sample_count: int,
     pre_trigger_samples: int,
     sample_interval_ns: float,
@@ -353,7 +353,8 @@ def create_acquisition_engine(
     Args:
         scope_info: Information about the connected scope
         event_storage: Global event storage for processed events
-        batch_size: Number of captures per batch
+        batch_size: Number of captures per batch, or None to use the
+            driver's per-series default (10 for PS3000a, 20 for PS6000)
         sample_count: Total samples per capture
         pre_trigger_samples: Number of pre-trigger samples
         sample_interval_ns: Sample interval in nanoseconds
@@ -371,10 +372,15 @@ def create_acquisition_engine(
     if max_adc is None:
         max_adc = scope_info.max_adc
 
+    driver = create_driver(scope_info)
+    if batch_size is None:
+        batch_size = driver.default_batch_size
+
     return AcquisitionEngine(
         scope_info=scope_info,
         event_storage=event_storage,
         batch_size=batch_size,
+        driver=driver,
         sample_count=sample_count,
         pre_trigger_samples=pre_trigger_samples,
         sample_interval_ns=sample_interval_ns,

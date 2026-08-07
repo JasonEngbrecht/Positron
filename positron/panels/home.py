@@ -25,7 +25,7 @@ from PySide6.QtGui import QFont
 
 from positron.app import PositronApp
 from positron.ui.waveform_plot import WaveformPlot
-from positron.scope.acquisition import create_acquisition_engine, WaveformBatch
+from positron.scope.acquisition import AcquisitionEngine, create_acquisition_engine, WaveformBatch
 from positron.ui.trigger_dialog import show_trigger_config_dialog
 from positron.scope.trigger import create_trigger_configurator
 
@@ -52,7 +52,7 @@ class HomePanel(QWidget):
         super().__init__(parent)
         
         self.app = app
-        self.acquisition_engine: Optional[create_acquisition_engine] = None
+        self.acquisition_engine: Optional[AcquisitionEngine] = None
         
         # State
         self._state = "stopped"  # "stopped", "running", "paused"
@@ -573,6 +573,13 @@ class HomePanel(QWidget):
         if self.acquisition_engine is None or not self.acquisition_engine.is_running():
             # Clean up old engine if it exists
             if self.acquisition_engine is not None:
+                # Wait for the old thread to fully exit before dropping our
+                # reference: its numpy buffers are registered with the driver
+                # DLL for DMA, so they must not be garbage-collected (and no
+                # new engine may re-register buffers) while it could still be
+                # inside a capture call.
+                self.acquisition_engine.stop()
+                self.acquisition_engine.wait(2000)
                 # Disconnect old signals
                 try:
                     self.acquisition_engine.waveform_ready.disconnect()
@@ -664,6 +671,10 @@ class HomePanel(QWidget):
         
         # Need to recreate acquisition engine since QThread can't be restarted
         if self.acquisition_engine is not None:
+            # Wait for the old thread to fully exit before dropping our
+            # reference (see _start_acquisition for why)
+            self.acquisition_engine.stop()
+            self.acquisition_engine.wait(2000)
             # Disconnect old signals
             try:
                 self.acquisition_engine.waveform_ready.disconnect()
@@ -734,11 +745,11 @@ class HomePanel(QWidget):
         sample_rate = config.scope.sample_rate
         sample_interval_ns = 1e9 / sample_rate if sample_rate else 8.0
         
-        # Adjust batch size for PS6000 (20 vs 10 for PS3000a)
-        batch_size = config.default_batch_size
-        if scope_info.series == "6000" and batch_size == 10:
-            batch_size = 20  # PS6000 uses larger batches
-        
+        # Batch size: 10 is the historical config default; passing None lets
+        # the factory use the driver's per-series default (10 or 20). A
+        # custom config value is honored as-is on either series.
+        batch_size = config.default_batch_size if config.default_batch_size != 10 else None
+
         # Create engine
         self.acquisition_engine = create_acquisition_engine(
             scope_info=scope_info,
