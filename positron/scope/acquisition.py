@@ -6,7 +6,10 @@ designed for event-mode data collection at rates up to 10,000 events/second.
 """
 
 import logging
+import os
 import time
+from datetime import datetime
+from pathlib import Path
 from typing import Callable, Optional, Dict, List, Tuple
 from dataclasses import dataclass
 
@@ -126,6 +129,111 @@ class BatchTimingStats:
         )
 
 
+# ---------------------------------------------------------------------------
+# DIAGNOSTIC (temporary): raw-waveform dump of anomalous events.
+#
+# Investigating pulses that come out with negative energy. Set the environment
+# variable POSITRON_DUMP_ANOMALIES=1 (see run_debug.bat) and the engine writes
+# .npz files to ~/.positron/debug/<timestamp>/ for events where any channel
+# has a pulse with energy < 0 or CFD time < 2 ns, plus the first few normal
+# events for pulse-shape reference. Plot them with tools/plot_anomalies.py.
+# Zero cost when the variable is unset. Remove once the investigation is done.
+# ---------------------------------------------------------------------------
+ANOMALY_DUMP_ENV = "POSITRON_DUMP_ANOMALIES"
+ANOMALY_TIMING_NS = 2.0      # CFD time below this counts as anomalous
+ANOMALY_MAX_FILES = 40       # per run
+ANOMALY_NORMAL_FILES = 5     # reference events saved unconditionally
+ANOMALY_MIN_SPACING_S = 0.5  # spread saved anomalies over the run instead of
+                             # filling the cap in the first second at high rates
+
+
+class AnomalyDumper:
+    """Writes anomalous (and a few normal) events to disk as .npz files."""
+
+    def __init__(self, scope_variant: str, sample_interval_ns: float,
+                 pre_trigger_samples: int, cfd_fraction: float):
+        self.enabled = os.environ.get(ANOMALY_DUMP_ENV, "") not in ("", "0")
+        self.scope_variant = scope_variant
+        self.sample_interval_ns = sample_interval_ns
+        self.pre_trigger_samples = pre_trigger_samples
+        self.cfd_fraction = cfd_fraction
+        self.n_events = 0
+        self.n_anomalies = 0       # all anomalies seen, saved or not
+        self.n_saved = 0
+        self.n_normal_saved = 0
+        self._t_last_saved = -float('inf')
+        self.directory: Optional[Path] = None
+        if self.enabled:
+            stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            self.directory = Path.home() / ".positron" / "debug" / stamp
+            self.directory.mkdir(parents=True, exist_ok=True)
+            logger.info("Anomaly dump enabled: writing to %s", self.directory)
+
+    @staticmethod
+    def is_anomalous(event: EventData) -> bool:
+        for pulse in event.channels.values():
+            if pulse.has_pulse and (pulse.energy < 0.0 or pulse.timing_ns < ANOMALY_TIMING_NS):
+                return True
+        return False
+
+    def process_batch(self, time_ns: np.ndarray,
+                      waveforms: List[Dict[str, np.ndarray]],
+                      events: List[EventData]) -> None:
+        """Inspect one batch; waveforms[i] and events[i] describe segment i."""
+        for idx, event in enumerate(events):
+            self.n_events += 1
+            if self.n_normal_saved < ANOMALY_NORMAL_FILES:
+                self._save("normal", idx, time_ns, waveforms, events)
+                self.n_normal_saved += 1
+            if self.is_anomalous(event):
+                self.n_anomalies += 1
+                now = time.perf_counter()
+                if (self.n_saved < ANOMALY_MAX_FILES
+                        and now - self._t_last_saved >= ANOMALY_MIN_SPACING_S):
+                    self._save("anomaly", idx, time_ns, waveforms, events)
+                    self.n_saved += 1
+                    self._t_last_saved = now
+                    if self.n_saved == ANOMALY_MAX_FILES:
+                        logger.info("Anomaly dump: file cap (%d) reached; counting only",
+                                    ANOMALY_MAX_FILES)
+
+    def _save(self, kind: str, idx: int, time_ns: np.ndarray,
+              waveforms: List[Dict[str, np.ndarray]], events: List[EventData]) -> None:
+        event = events[idx]
+        data: Dict[str, object] = {
+            "kind": kind,
+            "scope_variant": self.scope_variant,
+            "sample_interval_ns": self.sample_interval_ns,
+            "pre_trigger_samples": self.pre_trigger_samples,
+            "cfd_fraction": self.cfd_fraction,
+            "time_ns": time_ns,
+            "event_id": event.event_id,
+            "segment_index": idx,
+            "batch_size": len(events),
+        }
+        # This segment, plus the neighbours in the batch (segment idx-1 was
+        # captured immediately before, idx+1 immediately after).
+        for prefix, j in (("", idx), ("prev_", idx - 1), ("next_", idx + 1)):
+            if j < 0 or j >= len(events):
+                continue
+            data[prefix + "event_id"] = events[j].event_id
+            for ch, wf in waveforms[j].items():
+                pulse = events[j].channels[ch]
+                data[f"{prefix}{ch}"] = wf
+                data[f"{prefix}{ch}_timing_ns"] = pulse.timing_ns
+                data[f"{prefix}{ch}_energy"] = pulse.energy
+                data[f"{prefix}{ch}_peak_mv"] = pulse.peak_mv
+                data[f"{prefix}{ch}_has_pulse"] = pulse.has_pulse
+        path = self.directory / f"{kind}_{event.event_id:07d}.npz"
+        np.savez(path, **data)
+
+    def close(self) -> None:
+        if self.enabled:
+            logger.info("Anomaly dump: %d anomalous of %d events (%.2f%%); %d anomaly + %d normal files in %s",
+                        self.n_anomalies, self.n_events,
+                        100.0 * self.n_anomalies / max(self.n_events, 1),
+                        self.n_saved, self.n_normal_saved, self.directory)
+
 class AcquisitionEngine(QThread):
     """
     Rapid-block acquisition engine for any driver-supported scope series.
@@ -214,6 +322,11 @@ class AcquisitionEngine(QThread):
         self.total_captures = 0
         self._timing = BatchTimingStats()
 
+        # Diagnostic waveform dump (off unless POSITRON_DUMP_ANOMALIES is set)
+        self._dumper = AnomalyDumper(
+            scope_info.variant, sample_interval_ns, pre_trigger_samples, cfd_fraction
+        )
+
     def run(self) -> None:
         """
         Main acquisition loop (runs in separate thread).
@@ -251,6 +364,7 @@ class AcquisitionEngine(QThread):
         finally:
             # Cleanup
             self._cleanup()
+            self._dumper.close()
             with QMutexLocker(self._mutex):
                 self._running = False
             self.acquisition_finished.emit()
@@ -341,6 +455,7 @@ class AcquisitionEngine(QThread):
             # Process each segment in the batch
             events_to_store: List[EventData] = []
             display_waveforms: Dict[str, np.ndarray] = {}
+            batch_waveforms: List[Dict[str, np.ndarray]] = []  # diagnostic dump only
 
             for segment_idx in range(self.batch_size):
                 # Convert ADC to mV for this segment
@@ -369,6 +484,11 @@ class AcquisitionEngine(QThread):
                 )
 
                 events_to_store.append(event_data)
+                if self._dumper.enabled:
+                    batch_waveforms.append(segment_waveforms)
+
+            if self._dumper.enabled:
+                self._dumper.process_batch(time_ns, batch_waveforms, events_to_store)
 
             # Store all events from this batch
             num_added = self.event_storage.add_events(events_to_store)
