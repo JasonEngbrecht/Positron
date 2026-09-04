@@ -5,7 +5,6 @@ This module handles high-speed batch acquisition of triggered waveforms,
 designed for event-mode data collection at rates up to 10,000 events/second.
 """
 
-import ctypes
 import time
 from typing import Optional, Dict, List, Tuple
 from dataclasses import dataclass
@@ -13,7 +12,6 @@ from dataclasses import dataclass
 import numpy as np
 from PySide6.QtCore import QThread, Signal, QMutex, QMutexLocker
 
-from picosdk.functions import adc2mV
 from positron.scope.connection import ScopeInfo
 from positron.scope.driver import ScopeDriver, create_driver, CHANNEL_MAP
 from positron.processing.pulse import analyze_event, EventData
@@ -27,6 +25,35 @@ class WaveformBatch:
     waveforms: Dict[str, np.ndarray]  # Channel name -> voltage array (mV)
     num_captures: int  # Number of captures in this batch
     segment_index: int  # Index of the segment shown (for display)
+
+
+# Full-scale millivolts for each PicoScope range code. Same table (and
+# indexing) as picosdk.functions.adc2mV; index 3 = 100 mV on both PS3000a
+# and PS6000.
+CHANNEL_INPUT_RANGES_MV = [10, 20, 50, 100, 200, 500, 1000, 2000, 5000,
+                           10000, 20000, 50000, 100000, 200000]
+
+
+def adc_to_mv(buffer_adc: np.ndarray, voltage_range_code: int, max_adc: int) -> np.ndarray:
+    """
+    Convert raw ADC counts to millivolts (vectorized, float64).
+
+    Replaces picosdk.functions.adc2mV, which multiplies each int16 sample by
+    the range in a Python loop. Under NumPy >= 2 (NEP 50 promotion) that
+    product stays int16 and wraps for any sample beyond ~1 mV, silently
+    corrupting every waveform. Widening to float64 first makes the result
+    independent of NumPy's promotion rules, and is ~100x faster.
+
+    Args:
+        buffer_adc: Raw ADC samples (any integer dtype)
+        voltage_range_code: PicoScope range code (index into CHANNEL_INPUT_RANGES_MV)
+        max_adc: Full-scale ADC count for this scope (e.g. 32512 on PS6000)
+
+    Returns:
+        float64 array of the same shape, in millivolts
+    """
+    range_mv = CHANNEL_INPUT_RANGES_MV[voltage_range_code]
+    return np.asarray(buffer_adc, dtype=np.float64) * (range_mv / max_adc)
 
 
 class AcquisitionEngine(QThread):
@@ -220,21 +247,19 @@ class AcquisitionEngine(QThread):
             time_ns -= self.pre_trigger_samples * self.sample_interval_ns  # Trigger at t=0
 
             # Process each segment in the batch
-            max_adc_ctypes = ctypes.c_int16(self.max_adc)
             events_to_store: List[EventData] = []
+            display_waveforms: Dict[str, np.ndarray] = {}
 
             for segment_idx in range(self.batch_size):
                 # Convert ADC to mV for this segment
                 segment_waveforms = {}
                 for channel_name in self._channels.keys():
                     buffer_max, _ = self._buffers[channel_name][segment_idx]
-                    waveform_mv = adc2mV(
-                        buffer_max,
-                        self.voltage_range_code,
-                        max_adc_ctypes
+                    segment_waveforms[channel_name] = adc_to_mv(
+                        buffer_max, self.voltage_range_code, self.max_adc
                     )
-                    # Ensure it's a numpy array (adc2mV sometimes returns list)
-                    segment_waveforms[channel_name] = np.asarray(waveform_mv)
+                if segment_idx == 0:
+                    display_waveforms = segment_waveforms
 
                 # Analyze this event
                 event_id = self.event_storage.get_next_event_id()
@@ -270,25 +295,13 @@ class AcquisitionEngine(QThread):
                     f"Event storage {fill_pct:.1f}% full ({self.event_storage.get_count():,} events)"
                 )
 
-            # Prepare display waveform (first segment)
-            waveforms_mv = {}
-            for channel_name in self._channels.keys():
-                buffer_max, _ = self._buffers[channel_name][0]  # First segment
-                waveform_mv = adc2mV(
-                    buffer_max,
-                    self.voltage_range_code,
-                    max_adc_ctypes
-                )
-                # Ensure it's a numpy array (adc2mV sometimes returns list)
-                waveforms_mv[channel_name] = np.asarray(waveform_mv)
-
             # Update statistics
             self.total_captures += self.batch_size
 
             # Emit signals
             batch = WaveformBatch(
                 time_ns=time_ns,
-                waveforms=waveforms_mv,
+                waveforms=display_waveforms,  # First segment of the batch
                 num_captures=self.batch_size,
                 segment_index=0
             )
