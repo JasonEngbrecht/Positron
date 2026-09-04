@@ -62,6 +62,11 @@ if errorlevel 1 (
     exit /b 1
 )
 
+REM Remove the intermediate bootloader stub PyInstaller leaves in build\.
+REM It has no _internal\ folder beside it, so launching it fails with
+REM "Failed to load Python DLL". Only dist\Positron\Positron.exe is runnable.
+if exist "build\positron\Positron.exe" del /q "build\positron\Positron.exe"
+
 REM Copy PDF to distribution folder
 if exist "Positron_User_Manual.pdf" (
     echo.
@@ -77,6 +82,7 @@ echo ========================================
 echo.
 echo The executable is located at:
 echo   dist\Positron\Positron.exe
+echo (Do not run anything under build\ - that folder holds only intermediates.)
 echo.
 echo User manual included at:
 echo   dist\Positron\Positron_User_Manual.pdf
