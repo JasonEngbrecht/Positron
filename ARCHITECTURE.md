@@ -387,6 +387,9 @@ positron/
 - NumPy vectorized operations for pulse analysis
 - Plot updates throttled by QTimer (don't overwhelm rendering)
 - EventStorage uses Python list (fast append, adequate for 1M events)
+- Poll `is_ready()` with `time.sleep(0.2 ms)`, never `QThread.msleep(1)`: on Windows the latter rounds up to the 15.6 ms scheduler tick and left the scope disarmed for ~24 ms of every batch
+- Re-arm the scope immediately after `get_values_bulk()`, before processing: downloaded samples are already in our NumPy buffers, so the next batch captures while the current one is analyzed
+- The engine logs a per-batch wait / download / process / other summary every 5 s (`BatchTimingStats`); read it before optimizing anything
 
 ### Memory Usage
 - **Per Event**: ~750 bytes (4 channels × ~180 bytes + overhead)
@@ -481,6 +484,6 @@ cProfile.run('your_function()', 'output.prof')
 
 ---
 
-**Last Updated**: August 2026  
-**Version**: 1.2.0  
+**Last Updated**: September 2026  
+**Version**: 1.3.0  
 **Contributors**: See commit history

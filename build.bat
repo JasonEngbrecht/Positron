@@ -9,9 +9,11 @@ echo.
 
 REM Generate PDF user manual
 echo Generating user manual PDF...
-where python >nul 2>nul
+REM Prefer the py launcher: on some machines plain `python` is only the
+REM Microsoft Store stub, which fails and leaves the manual stale.
+where py >nul 2>nul
 if %errorlevel% equ 0 (
-    python generate_readme_pdf.py
+    py generate_readme_pdf.py
     if errorlevel 1 (
         echo WARNING: Failed to generate PDF user manual
         echo Make sure reportlab is installed: pip install reportlab
@@ -19,10 +21,10 @@ if %errorlevel% equ 0 (
         echo.
     )
 ) else (
-    REM Try using py launcher as fallback
-    where py >nul 2>nul
+    REM Fall back to python on PATH
+    where python >nul 2>nul
     if %errorlevel% equ 0 (
-        py generate_readme_pdf.py
+        python generate_readme_pdf.py
         if errorlevel 1 (
             echo WARNING: Failed to generate PDF user manual
             echo Make sure reportlab is installed: pip install reportlab

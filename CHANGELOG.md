@@ -2,6 +2,32 @@
 
 All notable changes to Positron are documented here.
 
+## [1.3.0] - 2026-09-04
+
+### Fixed
+- ADC-to-mV conversion silently corrupted every waveform when running under
+  NumPy >= 2: picosdk's `adc2mV` multiplies int16 samples in a Python loop
+  and the product now wraps (a -5 mV pulse read as -0.97 mV). Replaced with
+  a vectorized float64 conversion (`adc_to_mv`) plus regression tests. The
+  1.2.0 executable was unaffected only because it bundled NumPy 1.x.
+- `build.bat` removes PyInstaller's intermediate `build\positron\Positron.exe`
+  stub (launching it fails with "Failed to load Python DLL") and prefers the
+  `py` launcher so the user manual PDF is regenerated.
+
+### Changed
+- Acquisition rate on a PS6402D with the same source: ~600 events/s
+  (1.2.0 from source; ~60 events/s for the 1.2.0 executable) -> ~2450 events/s
+  - Poll loop uses `time.sleep` (0.6 ms actual) instead of `QThread.msleep(1)`,
+    which rounds up to the 15.6 ms Windows scheduler tick; the post-batch
+    sleep is removed
+  - The scope is re-armed immediately after each download so it captures the
+    next batch while the current one is processed
+
+### Added
+- Per-batch acquisition timing summary (wait / download / process / other)
+  logged every 5 s; INFO console logging when running from source, including
+  the reason a scope connection attempt failed (e.g. device busy)
+
 ## [1.2.0] - 2026-08-07
 
 ### Changed
