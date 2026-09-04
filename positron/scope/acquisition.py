@@ -21,6 +21,13 @@ from positron.processing.events import EventStorage
 
 logger = logging.getLogger(__name__)
 
+# Sleep between is_ready() polls. time.sleep() uses a high-resolution timer
+# on Windows (measured ~0.6 ms actual for 0.2 ms requested). Do NOT use
+# QThread.msleep(1) here: it rounds up to the 15.6 ms scheduler tick and
+# cost ~24 ms of dead time per batch (scope disarmed) at 600 events/s.
+POLL_INTERVAL_S = 0.0002
+TRIGGER_TIMEOUT_S = 10.0
+
 
 @dataclass
 class WaveformBatch:
@@ -231,9 +238,6 @@ class AcquisitionEngine(QThread):
                     # Error occurred or stop requested
                     break
 
-                # Small delay to prevent CPU thrashing
-                self.msleep(1)
-
         except Exception as e:
             import traceback
             error_details = f"Acquisition error: {str(e)}\n{traceback.format_exc()}"
@@ -289,21 +293,17 @@ class AcquisitionEngine(QThread):
             )
 
             # Poll until all captures complete (with timeout)
-            max_polls = 10000  # ~10 second timeout
-            polls = 0
             while not self.driver.is_ready():
                 # Check for stop request
                 with QMutexLocker(self._mutex):
                     if self._stop_requested:
                         return False
 
-                polls += 1
-                if polls > max_polls:
+                if time.perf_counter() - t_armed > TRIGGER_TIMEOUT_S:
                     self.acquisition_error.emit("Timeout waiting for triggers")
                     return False
 
-                # Small delay
-                self.msleep(1)
+                time.sleep(POLL_INTERVAL_S)
 
             t_ready = time.perf_counter()
 
