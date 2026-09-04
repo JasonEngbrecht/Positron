@@ -205,6 +205,11 @@ class AcquisitionEngine(QThread):
         # Timebase validated by the configurator (must match sample_interval_ns)
         self._timebase = timebase_index
 
+        # Arm state: True while the scope is collecting a batch we have not
+        # yet downloaded. Set by _arm(), cleared after get_values_bulk().
+        self._armed = False
+        self._t_armed = 0.0
+
         # Statistics
         self.total_captures = 0
         self._timing = BatchTimingStats()
@@ -277,20 +282,31 @@ class AcquisitionEngine(QThread):
                     channel_code, segment, buffer_max, buffer_min, self.sample_count
                 )
 
+    def _arm(self) -> None:
+        """Start a rapid-block capture of batch_size segments."""
+        self.driver.run_block(
+            self.pre_trigger_samples, self.post_trigger_samples, self._timebase
+        )
+        self._armed = True
+        self._t_armed = time.perf_counter()
+
     def _capture_batch(self) -> bool:
         """
         Capture one batch of waveforms.
+
+        Sequence: (arm if needed) -> wait ready -> download -> RE-ARM ->
+        process. Re-arming before processing lets the scope collect the
+        next batch while this one is analyzed: the downloaded samples are
+        already in our numpy buffers, which the driver only writes during
+        get_values_bulk(), so processing after re-arm is safe.
 
         Returns:
             True if successful, False if error or stop requested
         """
         try:
-            t_armed = time.perf_counter()
-
-            # Start the block capture
-            self.driver.run_block(
-                self.pre_trigger_samples, self.post_trigger_samples, self._timebase
-            )
+            if not self._armed:
+                self._arm()
+            t_wait_start = time.perf_counter()
 
             # Poll until all captures complete (with timeout)
             while not self.driver.is_ready():
@@ -299,7 +315,7 @@ class AcquisitionEngine(QThread):
                     if self._stop_requested:
                         return False
 
-                if time.perf_counter() - t_armed > TRIGGER_TIMEOUT_S:
+                if time.perf_counter() - self._t_armed > TRIGGER_TIMEOUT_S:
                     self.acquisition_error.emit("Timeout waiting for triggers")
                     return False
 
@@ -309,7 +325,14 @@ class AcquisitionEngine(QThread):
 
             # Retrieve data from all segments
             self.driver.get_values_bulk(self.sample_count, self.batch_size)
+            self._armed = False
             t_downloaded = time.perf_counter()
+
+            # Re-arm immediately so the scope is live while we process
+            with QMutexLocker(self._mutex):
+                stop_requested = self._stop_requested
+            if not stop_requested:
+                self._arm()
 
             # Create time array in nanoseconds (relative to trigger)
             time_ns = np.arange(self.sample_count) * self.sample_interval_ns
@@ -367,7 +390,7 @@ class AcquisitionEngine(QThread):
             # Update statistics
             self.total_captures += self.batch_size
             summary = self._timing.record(
-                wait_s=t_ready - t_armed,
+                wait_s=t_ready - t_wait_start,
                 download_s=t_downloaded - t_ready,
                 process_s=time.perf_counter() - t_downloaded,
                 captures=self.batch_size,
