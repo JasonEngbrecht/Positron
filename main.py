@@ -11,6 +11,7 @@ This script handles application startup:
 Run this file to start Positron: python main.py
 """
 
+import logging
 import sys
 
 from PySide6.QtWidgets import QMessageBox
@@ -25,6 +26,14 @@ from picosdk.errors import DeviceNotFoundError
 
 def main():
     """Main application entry point."""
+    # Console logging (source runs). In the windowed frozen build there is
+    # no stderr, so skip it there rather than attach a handler to None.
+    if sys.stderr is not None:
+        logging.basicConfig(
+            level=logging.INFO,
+            format="%(asctime)s %(levelname)s %(name)s: %(message)s",
+        )
+
     try:
         # Create Qt application
         app = create_application()

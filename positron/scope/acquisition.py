@@ -5,8 +5,9 @@ This module handles high-speed batch acquisition of triggered waveforms,
 designed for event-mode data collection at rates up to 10,000 events/second.
 """
 
+import logging
 import time
-from typing import Optional, Dict, List, Tuple
+from typing import Callable, Optional, Dict, List, Tuple
 from dataclasses import dataclass
 
 import numpy as np
@@ -16,6 +17,9 @@ from positron.scope.connection import ScopeInfo
 from positron.scope.driver import ScopeDriver, create_driver, CHANNEL_MAP
 from positron.processing.pulse import analyze_event, EventData
 from positron.processing.events import EventStorage
+
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -54,6 +58,65 @@ def adc_to_mv(buffer_adc: np.ndarray, voltage_range_code: int, max_adc: int) -> 
     """
     range_mv = CHANNEL_INPUT_RANGES_MV[voltage_range_code]
     return np.asarray(buffer_adc, dtype=np.float64) * (range_mv / max_adc)
+
+
+class BatchTimingStats:
+    """
+    Accumulates per-batch phase timings and emits a one-line summary every
+    `interval_s` seconds of wall time.
+
+    Phases per batch:
+      wait     - run_block issued -> scope reports ready (trigger wait, plus
+                 any ready-detection latency from the poll loop's sleep)
+      download - get_values_bulk
+      process  - ADC->mV, pulse analysis, storage append
+      other    - everything else in the loop (signal emission, post-batch
+                 sleep, Python overhead); derived as wall - sum(phases)
+    """
+
+    def __init__(self, interval_s: float = 5.0,
+                 clock: Callable[[], float] = time.perf_counter):
+        self.interval_s = interval_s
+        self._clock = clock
+        self._reset(self._clock())
+
+    def _reset(self, now: float) -> None:
+        self._window_start = now
+        self._batches = 0
+        self._captures = 0
+        self._wait = 0.0
+        self._download = 0.0
+        self._process = 0.0
+
+    def record(self, wait_s: float, download_s: float, process_s: float,
+               captures: int) -> Optional[str]:
+        """Record one batch. Returns a summary string when a window closes, else None."""
+        self._batches += 1
+        self._captures += captures
+        self._wait += wait_s
+        self._download += download_s
+        self._process += process_s
+
+        now = self._clock()
+        elapsed = now - self._window_start
+        if elapsed < self.interval_s:
+            return None
+        summary = self._format(elapsed)
+        self._reset(now)
+        return summary
+
+    def _format(self, elapsed: float) -> str:
+        n = self._batches
+        busy = self._wait + self._download + self._process
+        other = max(elapsed - busy, 0.0)
+        return (
+            f"acq: {self._captures / elapsed:.0f} events/s, "
+            f"{n / elapsed:.1f} batches/s ({self._captures / n:.0f} captures/batch) | "
+            f"per batch: wait {self._wait / n * 1e3:.1f} ms, "
+            f"download {self._download / n * 1e3:.1f} ms, "
+            f"process {self._process / n * 1e3:.1f} ms, "
+            f"other {other / n * 1e3:.1f} ms"
+        )
 
 
 class AcquisitionEngine(QThread):
@@ -137,6 +200,7 @@ class AcquisitionEngine(QThread):
 
         # Statistics
         self.total_captures = 0
+        self._timing = BatchTimingStats()
 
     def run(self) -> None:
         """
@@ -217,6 +281,8 @@ class AcquisitionEngine(QThread):
             True if successful, False if error or stop requested
         """
         try:
+            t_armed = time.perf_counter()
+
             # Start the block capture
             self.driver.run_block(
                 self.pre_trigger_samples, self.post_trigger_samples, self._timebase
@@ -239,8 +305,11 @@ class AcquisitionEngine(QThread):
                 # Small delay
                 self.msleep(1)
 
+            t_ready = time.perf_counter()
+
             # Retrieve data from all segments
             self.driver.get_values_bulk(self.sample_count, self.batch_size)
+            t_downloaded = time.perf_counter()
 
             # Create time array in nanoseconds (relative to trigger)
             time_ns = np.arange(self.sample_count) * self.sample_interval_ns
@@ -297,6 +366,14 @@ class AcquisitionEngine(QThread):
 
             # Update statistics
             self.total_captures += self.batch_size
+            summary = self._timing.record(
+                wait_s=t_ready - t_armed,
+                download_s=t_downloaded - t_ready,
+                process_s=time.perf_counter() - t_downloaded,
+                captures=self.batch_size,
+            )
+            if summary:
+                logger.info(summary)
 
             # Emit signals
             batch = WaveformBatch(
