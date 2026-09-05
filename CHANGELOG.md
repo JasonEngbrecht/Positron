@@ -49,6 +49,14 @@ All notable changes to Positron are documented here.
 - Developer diagnostic: `run_debug.bat` (env `POSITRON_DUMP_ANOMALIES=1`)
   writes raw waveforms of rejected / negative-energy events to
   `~/.positron/debug/`; `tools/plot_anomalies.py` plots them.
+- Home panel CSV export gains two columns per channel: `X_energy_raw`
+  (integrated pulse in mV·ns before calibration) and `X_peak_mv` (peak
+  amplitude below baseline). `tools/clip_check.py` reads an export and
+  reports, per channel, how many pulses reached the voltage-range rail
+  overall and inside the 1275 keV photopeak, the region's raw centroid, and
+  the energy/peak effective width, with an energy-vs-peak plot. Used to
+  separate ADC clipping from NaI nonlinearity as the cause of the negative
+  calibration offsets.
 
 ## [1.3.0] - 2026-09-04
 

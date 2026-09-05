@@ -472,7 +472,10 @@ class HomePanel(QWidget):
                     f"pre_trigger = pulse in the pre-trigger window (dips > {PULSE_THRESHOLD_MV:.0f} mV), "
                     f"no_edge = leading edge not inside the window, "
                     f"width = energy/peak < {MIN_EFFECTIVE_WIDTH_NS:.0f} ns (PMT dark pulse). "
-                    f"Events triggered only by a dark pulse are not stored.\n")
+                    f"Events triggered only by a dark pulse are not stored. "
+                    f"X_energy_raw is the integrated pulse (mV·ns) before calibration; "
+                    f"X_peak_mv is the peak amplitude below baseline (mV), so a value at "
+                    f"the voltage range means the pulse clipped.\n")
             f.write(f"#\n")
             
             # Trigger configuration
@@ -529,7 +532,8 @@ class HomePanel(QWidget):
             # Write header row
             header = []
             for ch in ['A', 'B', 'C', 'D']:
-                header += [f'{ch}_has_pulse', f'{ch}_rejected', f'{ch}_timing_ns', f'{ch}_energy_kev']
+                header += [f'{ch}_has_pulse', f'{ch}_rejected', f'{ch}_timing_ns', f'{ch}_energy_kev',
+                           f'{ch}_energy_raw', f'{ch}_peak_mv']
             writer.writerow(header)
             
             # Write data rows
@@ -564,9 +568,15 @@ class HomePanel(QWidget):
                         else:
                             # Not calibrated - write N/A
                             row.append('N/A')
+
+                        # Raw integrated energy (mV·ns) and peak amplitude below
+                        # baseline (mV): range-independent quantities for the
+                        # offline linearity / clipping check (tools/clip_check.py)
+                        row.append(f"{pulse.energy:.3f}")
+                        row.append(f"{pulse.peak_mv:.3f}")
                     else:
                         # No pulse data for this channel
-                        row.extend(['FALSE', '', '0.0', 'N/A'])
+                        row.extend(['FALSE', '', '0.0', 'N/A', '0.0', '0.0'])
                 
                 writer.writerow(row)
     
