@@ -492,7 +492,7 @@ logger.debug("Message here")
 
 ### Common Issues
 - **Scope not detected**: Check series detection order in `connection.py`
-- **Acquisition timeout**: Verify trigger conditions actually fire
+- **No events arriving**: there is no trigger timeout any more (partial batches are read every 0.5 s); if the event count stays at 0, verify the detectors are connected and the trigger conditions actually fire
 - **Memory leak**: Check event storage isn't growing unbounded
 - **UI freeze**: Ensure no blocking operations in main thread
 
