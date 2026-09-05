@@ -17,7 +17,7 @@ import numpy as np
 from PySide6.QtCore import QThread, Signal, QMutex, QMutexLocker
 
 from positron.scope.connection import ScopeInfo
-from positron.scope.driver import ScopeDriver, create_driver, CHANNEL_MAP
+from positron.scope.driver import ScopeDriver, create_driver, CHANNEL_MAP, CHANNEL_INPUT_RANGES_MV
 from positron.processing.pulse import analyze_event, EventData
 from positron.processing.events import EventStorage
 
@@ -46,13 +46,6 @@ class WaveformBatch:
     waveforms: Dict[str, np.ndarray]  # Channel name -> voltage array (mV)
     num_captures: int  # Number of captures in this batch
     segment_index: int  # Index of the segment shown (for display)
-
-
-# Full-scale millivolts for each PicoScope range code. Same table (and
-# indexing) as picosdk.functions.adc2mV; index 3 = 100 mV on both PS3000a
-# and PS6000.
-CHANNEL_INPUT_RANGES_MV = [10, 20, 50, 100, 200, 500, 1000, 2000, 5000,
-                           10000, 20000, 50000, 100000, 200000]
 
 
 def adc_to_mv(buffer_adc: np.ndarray, voltage_range_code: int, max_adc: int) -> np.ndarray:

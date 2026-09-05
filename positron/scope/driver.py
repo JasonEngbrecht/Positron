@@ -17,6 +17,7 @@ values differ for real (see docs/picosdk-python-wrappers-master/picosdk/).
 """
 
 import ctypes
+import os
 from typing import List, Optional, Protocol, Tuple
 
 import numpy as np
@@ -28,12 +29,51 @@ from positron.scope.connection import ScopeInfo
 # Channel name to index mapping (same on both series)
 CHANNEL_MAP = {'A': 0, 'B': 1, 'C': 2, 'D': 3}
 
+# Full-scale millivolts for each PicoScope range code. Same table (and
+# indexing) as picosdk.functions.adc2mV and as the PS3000A_RANGE / PS6000_RANGE
+# enums; index 3 = 100 mV on both series.
+CHANNEL_INPUT_RANGES_MV = [10, 20, 50, 100, 200, 500, 1000, 2000, 5000,
+                           10000, 20000, 50000, 100000, 200000]
+
+# Input voltage range. 100 mV is the production setting (finest vertical
+# resolution on the pulse leading edge for CFD timing). The environment
+# variable POSITRON_RANGE_MV=200 (or 500; see run_200mv.bat) overrides it for
+# every driver instance created in the process - channel setup, trigger
+# threshold conversion and ADC-to-mV conversion all follow it. Developer
+# switch for energy-linearity / clipping studies, not a user setting.
+VOLTAGE_RANGE_ENV = "POSITRON_RANGE_MV"
+DEFAULT_VOLTAGE_RANGE_MV = 100
+SUPPORTED_VOLTAGE_RANGES_MV = (50, 100, 200, 500)
+
+
+def configured_voltage_range_mv() -> int:
+    """Input range in mV: POSITRON_RANGE_MV if set, else 100."""
+    raw = os.environ.get(VOLTAGE_RANGE_ENV, "").strip()
+    if not raw:
+        return DEFAULT_VOLTAGE_RANGE_MV
+    try:
+        range_mv = int(raw)
+    except ValueError:
+        raise ValueError(f"{VOLTAGE_RANGE_ENV}={raw!r} is not an integer number of mV")
+    if range_mv not in SUPPORTED_VOLTAGE_RANGES_MV:
+        raise ValueError(
+            f"{VOLTAGE_RANGE_ENV}={range_mv} is not supported; "
+            f"choose one of {SUPPORTED_VOLTAGE_RANGES_MV}"
+        )
+    return range_mv
+
+
+def voltage_range_code(range_mv: int) -> int:
+    """PicoScope range code (index into CHANNEL_INPUT_RANGES_MV) for a range in mV."""
+    return CHANNEL_INPUT_RANGES_MV.index(range_mv)
+
 
 class ScopeDriver(Protocol):
     """Unified low-level operations on an open PicoScope handle."""
 
     series: str
-    voltage_range_code_100mv: int
+    voltage_range_mv: int      # input range applied by set_channel
+    voltage_range_code: int    # series range code for voltage_range_mv
     default_batch_size: int
     timebase_trial_samples: int
 
@@ -73,16 +113,19 @@ class PS3000aDriver:
         self.scope_info = scope_info
         self.handle = scope_info.handle
         self.ps = scope_info.api_module
-        self.voltage_range_code_100mv = self.ps.PS3000A_RANGE['PS3000A_100MV']
+        self.voltage_range_mv = configured_voltage_range_mv()
+        self.voltage_range_code = self.ps.PS3000A_RANGE[f'PS3000A_{self.voltage_range_mv}MV']
+        # The enum is laid out like the shared range table; adc_to_mv relies on it
+        assert self.voltage_range_code == voltage_range_code(self.voltage_range_mv)
 
     def set_channel(self, channel_idx: int) -> None:
-        """Enable a channel: 100 mV range, DC coupling (1 MOhm), 0 V offset."""
+        """Enable a channel: configured range (100 mV default), DC coupling (1 MOhm), 0 V offset."""
         status = self.ps.ps3000aSetChannel(
             self.handle,
             channel_idx,
             1,  # enabled
             self.ps.PS3000A_COUPLING['PS3000A_DC'],
-            self.voltage_range_code_100mv,
+            self.voltage_range_code,
             0.0  # analog offset
         )
         assert_pico_ok(status)
@@ -201,7 +244,7 @@ class PS3000aDriver:
         PS3000a API - verified against the vendored picosdk source.
         """
         max_adc_ctypes = ctypes.c_int16(self.scope_info.max_adc)
-        threshold_adc = mV2adc(threshold_mv, self.voltage_range_code_100mv, max_adc_ctypes)
+        threshold_adc = mV2adc(threshold_mv, self.voltage_range_code, max_adc_ctypes)
 
         properties_array = (self.ps.PS3000A_TRIGGER_CHANNEL_PROPERTIES * len(channels))()
         for i, channel_name in enumerate(channels):
@@ -305,9 +348,6 @@ class PS6000Driver:
     default_batch_size = 20
     timebase_trial_samples = 1000
 
-    # PS6000_RANGE index 3 = 100 mV (see docs/picosdk-python-wrappers-master)
-    voltage_range_code_100mv = 3
-
     def __init__(self, scope_info: ScopeInfo):
         if scope_info.series != self.series:
             raise ValueError(
@@ -316,10 +356,14 @@ class PS6000Driver:
         self.scope_info = scope_info
         self.handle = scope_info.handle
         self.ps = scope_info.api_module
+        # PS6000_RANGE is laid out like the shared range table (index 3 = 100 mV,
+        # see docs/picosdk-python-wrappers-master)
+        self.voltage_range_mv = configured_voltage_range_mv()
+        self.voltage_range_code = voltage_range_code(self.voltage_range_mv)
 
     def set_channel(self, channel_idx: int) -> None:
         """
-        Enable a channel: 100 mV range, DC 50 Ohm coupling, full bandwidth.
+        Enable a channel: configured range (100 mV default), DC 50 Ohm coupling, full bandwidth.
 
         The 50 Ohm input termination (PS6000_DC_50R = 2) is a deliberate
         physics choice for fast PMT pulses.
@@ -329,7 +373,7 @@ class PS6000Driver:
             channel_idx,
             1,  # enabled
             2,  # PS6000_DC_50R
-            self.voltage_range_code_100mv,
+            self.voltage_range_code,
             0.0,  # analog offset
             0  # PS6000_BW_FULL
         )
@@ -455,7 +499,7 @@ class PS6000Driver:
         for real - verified against the vendored picosdk source.
         """
         max_adc_ctypes = ctypes.c_int16(self.scope_info.max_adc)
-        threshold_adc = mV2adc(threshold_mv, self.voltage_range_code_100mv, max_adc_ctypes)
+        threshold_adc = mV2adc(threshold_mv, self.voltage_range_code, max_adc_ctypes)
 
         properties_array = (self.ps.PS6000_TRIGGER_CHANNEL_PROPERTIES * len(channels))()
         for i, channel_name in enumerate(channels):

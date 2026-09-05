@@ -5,7 +5,8 @@ This module provides a unified interface for configuring PicoScope oscilloscopes
 with hardcoded settings optimized for pulse detection experiments.
 
 Hardware Configuration (FIXED):
-- Voltage range: 100 mV on all channels
+- Voltage range: 100 mV on all channels (developer override: POSITRON_RANGE_MV,
+  see positron.scope.driver)
 - Channels: All 4 channels enabled
 - Coupling: DC (1 MOhm on PS3000a, 50 Ohm on PS6000 - see driver.py)
 - Timebase: Maximum (fastest) rate
@@ -22,8 +23,7 @@ from positron.scope.connection import ScopeInfo
 from positron.scope.driver import ScopeDriver, create_driver
 
 
-# Hardware configuration constants
-VOLTAGE_RANGE_MV = 100  # millivolts
+# Hardware configuration constants (the voltage range lives in the driver)
 PRE_TRIGGER_TIME_US = 1.0  # microseconds
 POST_TRIGGER_TIME_US = 2.0  # microseconds
 TOTAL_CAPTURE_TIME_US = PRE_TRIGGER_TIME_US + POST_TRIGGER_TIME_US
@@ -71,7 +71,8 @@ class ScopeConfigurator:
         Apply all hardware configuration settings to the scope.
 
         This configures:
-        - All 4 channels with 100mV range, DC coupling
+        - All 4 channels with the driver's voltage range (100 mV unless
+          overridden), DC coupling
         - Maximum sample rate (fastest timebase)
         - Sample counts based on 3 µs capture time
 
@@ -83,7 +84,7 @@ class ScopeConfigurator:
 
     def _configure_channels(self) -> None:
         """Configure all 4 analog channels with the fixed settings."""
-        self._voltage_range_code = self.driver.voltage_range_code_100mv
+        self._voltage_range_code = self.driver.voltage_range_code
 
         for channel_idx in self.CHANNELS:
             try:

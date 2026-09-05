@@ -27,6 +27,7 @@ from positron.app import PositronApp
 from positron.ui.waveform_plot import WaveformPlot
 from positron.processing.pulse import BASELINE_GUARD_NS, PULSE_THRESHOLD_MV, MIN_EFFECTIVE_WIDTH_NS
 from positron.scope.acquisition import AcquisitionEngine, create_acquisition_engine, WaveformBatch
+from positron.scope.driver import CHANNEL_INPUT_RANGES_MV
 from positron.ui.trigger_dialog import show_trigger_config_dialog
 from positron.scope.trigger import create_trigger_configurator
 from positron.processing.rate import RateEstimator, format_rate
@@ -139,7 +140,7 @@ class HomePanel(QWidget):
         
         # Voltage range
         layout.addWidget(QLabel("Voltage Range:"), 2, 0)
-        voltage_label = QLabel("100 mV (all channels)")
+        voltage_label = QLabel(f"{CHANNEL_INPUT_RANGES_MV[config.voltage_range_code]} mV (all channels)")
         layout.addWidget(voltage_label, 2, 1)
         
         # Enabled channels
@@ -460,7 +461,7 @@ class HomePanel(QWidget):
             f.write(f"# Scope Model: {scope_info.variant}\n")
             f.write(f"# Serial Number: {scope_info.serial}\n")
             f.write(f"# Sample Rate: {scope_config.sample_rate / 1e6:.2f} MS/s\n")
-            f.write(f"# Voltage Range: 100 mV (all channels)\n")
+            f.write(f"# Voltage Range: {CHANNEL_INPUT_RANGES_MV[scope_config.voltage_range_code]} mV (all channels)\n")
             
             # Capture window info
             total_time_us = scope_config.waveform_length / scope_config.sample_rate * 1e6

@@ -343,7 +343,12 @@ positron/
 **Rationale**: Optimize for PALS experiments, eliminate configuration complexity
 
 **Fixed Settings**:
-- Voltage range: 100 mV (optimized for PMT pulses)
+- Voltage range: 100 mV (optimized for PMT pulses). Developer override:
+  `POSITRON_RANGE_MV=200` (or 50/500; `run_200mv.bat`) is read by every
+  driver instance, so channel setup, the trigger threshold conversion and
+  the ADC-to-mV conversion stay consistent. Used for energy-linearity /
+  clipping studies (`tools/clip_check.py`); at 100 mV the pulse peak hits
+  the rail near 1000 keV.
 - Coupling: DC (standard for PMT signals)
 - Capture window: 3 µs (1 µs pre, 2 µs post) - sufficient for typical pulse widths
 - Trigger: -5 mV threshold, falling edge (negative pulses)

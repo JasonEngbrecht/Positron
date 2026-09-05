@@ -57,6 +57,12 @@ All notable changes to Positron are documented here.
   the energy/peak effective width, with an energy-vs-peak plot. Used to
   separate ADC clipping from NaI nonlinearity as the cause of the negative
   calibration offsets.
+- Developer range override: `POSITRON_RANGE_MV=200` (or 50/500;
+  `run_200mv.bat`) runs the scope at that input range instead of 100 mV.
+  Channel setup, trigger threshold and ADC-to-mV conversion all follow it;
+  the Home panel and the CSV header report the range in use. Raw energies
+  are range-independent, so the 511 keV raw centroid should not move
+  between ranges while a clipped 1275 keV centroid does.
 
 ## [1.3.0] - 2026-09-04
 

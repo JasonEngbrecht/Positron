@@ -22,7 +22,8 @@ BATCH = 20
 
 class FakeDriver:
     series = "fake"
-    voltage_range_code_100mv = 3
+    voltage_range_mv = 100
+    voltage_range_code = 3
     default_batch_size = BATCH
     timebase_trial_samples = 1
 
