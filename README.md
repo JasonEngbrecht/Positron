@@ -113,7 +113,7 @@ The executable will be in `dist\Positron\`
 - **Packaging**: PyInstaller
 
 ### Hardware Configuration
-- **Voltage Range**: 100 mV (all 4 channels)
+- **Voltage Range**: 200 mV (all 4 channels)
 - **Sample Rate**: Up to 250 MS/s (model dependent)
 - **Capture Window**: 3 µs (1 µs pre-trigger, 2 µs post-trigger)
 - **Trigger**: Configurable logic (AND/OR combinations)

@@ -35,19 +35,21 @@ CHANNEL_MAP = {'A': 0, 'B': 1, 'C': 2, 'D': 3}
 CHANNEL_INPUT_RANGES_MV = [10, 20, 50, 100, 200, 500, 1000, 2000, 5000,
                            10000, 20000, 50000, 100000, 200000]
 
-# Input voltage range. 100 mV is the production setting (finest vertical
-# resolution on the pulse leading edge for CFD timing). The environment
-# variable POSITRON_RANGE_MV=200 (or 500; see run_200mv.bat) overrides it for
-# every driver instance created in the process - channel setup, trigger
-# threshold conversion and ADC-to-mV conversion all follow it. Developer
-# switch for energy-linearity / clipping studies, not a user setting.
+# Input voltage range. 200 mV is the production setting: at 100 mV the NaI
+# pulse peak reached the rail near 1000 keV, clipping the whole 1275 keV
+# photopeak (see CHANGELOG / ARCHITECTURE); at 200 mV the largest Na-22
+# pulses peak at 105-130 mV. The environment variable POSITRON_RANGE_MV
+# (50/100/200/500) overrides it for every driver instance created in the
+# process - channel setup, trigger threshold conversion and ADC-to-mV
+# conversion all follow it. Developer switch for energy-linearity / clipping
+# studies (tools/clip_check.py), not a user setting.
 VOLTAGE_RANGE_ENV = "POSITRON_RANGE_MV"
-DEFAULT_VOLTAGE_RANGE_MV = 100
+DEFAULT_VOLTAGE_RANGE_MV = 200
 SUPPORTED_VOLTAGE_RANGES_MV = (50, 100, 200, 500)
 
 
 def configured_voltage_range_mv() -> int:
-    """Input range in mV: POSITRON_RANGE_MV if set, else 100."""
+    """Input range in mV: POSITRON_RANGE_MV if set, else 200."""
     raw = os.environ.get(VOLTAGE_RANGE_ENV, "").strip()
     if not raw:
         return DEFAULT_VOLTAGE_RANGE_MV
@@ -119,7 +121,7 @@ class PS3000aDriver:
         assert self.voltage_range_code == voltage_range_code(self.voltage_range_mv)
 
     def set_channel(self, channel_idx: int) -> None:
-        """Enable a channel: configured range (100 mV default), DC coupling (1 MOhm), 0 V offset."""
+        """Enable a channel: configured range (200 mV default), DC coupling (1 MOhm), 0 V offset."""
         status = self.ps.ps3000aSetChannel(
             self.handle,
             channel_idx,
@@ -363,7 +365,7 @@ class PS6000Driver:
 
     def set_channel(self, channel_idx: int) -> None:
         """
-        Enable a channel: configured range (100 mV default), DC 50 Ohm coupling, full bandwidth.
+        Enable a channel: configured range (200 mV default), DC 50 Ohm coupling, full bandwidth.
 
         The 50 Ohm input termination (PS6000_DC_50R = 2) is a deliberate
         physics choice for fast PMT pulses.

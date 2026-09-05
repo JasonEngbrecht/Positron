@@ -614,7 +614,7 @@ def create_acquisition_engine(
     sample_count: int,
     pre_trigger_samples: int,
     sample_interval_ns: float,
-    voltage_range_code: int = 3,  # PS6000_100MV
+    voltage_range_code: int = 4,  # 200 mV on both series
     max_adc: Optional[int] = None,
     cfd_fraction: float = 0.5,
     timebase_index: int = 0,

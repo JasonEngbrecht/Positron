@@ -5,7 +5,7 @@ This module provides a unified interface for configuring PicoScope oscilloscopes
 with hardcoded settings optimized for pulse detection experiments.
 
 Hardware Configuration (FIXED):
-- Voltage range: 100 mV on all channels (developer override: POSITRON_RANGE_MV,
+- Voltage range: 200 mV on all channels (developer override: POSITRON_RANGE_MV,
   see positron.scope.driver)
 - Channels: All 4 channels enabled
 - Coupling: DC (1 MOhm on PS3000a, 50 Ohm on PS6000 - see driver.py)
@@ -71,7 +71,7 @@ class ScopeConfigurator:
         Apply all hardware configuration settings to the scope.
 
         This configures:
-        - All 4 channels with the driver's voltage range (100 mV unless
+        - All 4 channels with the driver's voltage range (200 mV unless
           overridden), DC coupling
         - Maximum sample rate (fastest timebase)
         - Sample counts based on 3 µs capture time
@@ -175,7 +175,7 @@ class ScopeConfigurator:
         Get the voltage range code used for channel configuration.
 
         Returns:
-            Series-specific voltage range code for 100 mV (3 on both
+            Series-specific voltage range code for the configured range (200 mV = 4 on both
             PS3000a and PS6000, from their respective range enums)
 
         Raises:

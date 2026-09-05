@@ -126,7 +126,7 @@ For help with Positron:
 
 Positron automatically configures your PicoScope with optimized settings for pulse detection:
 
-- **Voltage Range**: 100 mV (all 4 channels)
+- **Voltage Range**: 200 mV (all 4 channels)
 - **Sample Rate**: Maximum available (typically 250 MS/s to 1.25 GS/s)
 - **Capture Window**: 3 µs (1 µs pre-trigger, 2 µs post-trigger)
 - **Trigger**: -5 mV threshold, falling edge, configurable logic

@@ -252,7 +252,7 @@ def show_home_help(parent=None):
     <h2>Hardware Details</h2>
     <h3>Optimized Settings (Pre-configured)</h3>
     <ul>
-        <li><b>Voltage Range:</b> 100 mV on all channels</li>
+        <li><b>Voltage Range:</b> 200 mV on all channels</li>
         <li><b>Coupling:</b> DC</li>
         <li><b>Sample Rate:</b> Maximum available (250 MS/s on PS3406D)</li>
         <li><b>Capture Window:</b> 3 µs total (1 µs pre-trigger, 2 µs post-trigger)</li>

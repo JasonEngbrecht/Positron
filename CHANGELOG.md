@@ -35,17 +35,6 @@ All notable changes to Positron are documented here.
   trigger, so pulses whose 50% point falls a sample before t = 0 get an
   interpolated time instead of the peak-time fallback; the search is
   vectorized (late pulses no longer cost a per-sample Python loop).
-
-### Changed
-- Home panel rate readout reads sensibly from ~0.01 Hz to several kHz: at
-  high rates it averages over at least 5 s of batches; at low rates it is the
-  last 10 events over the time they spanned, holding between events and
-  decaying only after ~3x the expected interval so a removed source becomes
-  visible. Formatting adapts to the magnitude (e.g. "0.42 events/s",
-  "2450 events/s"). The auto-stop time limit is now also enforced on the 1 s
-  statistics tick, not only when a batch arrives.
-
-### Fixed
 - Energy Display automatic binning gave each channel its own histogram
   range (its lowest to highest energy), so a single pile-up event at several
   thousand keV widened that channel's bins, made it tower over the others
@@ -58,6 +47,13 @@ All notable changes to Positron are documented here.
   reports how many. Raw data and the Home panel export are unchanged.
 
 ### Changed
+- Home panel rate readout reads sensibly from ~0.01 Hz to several kHz: at
+  high rates it averages over at least 5 s of batches; at low rates it is the
+  last 10 events over the time they spanned, holding between events and
+  decaying only after ~3x the expected interval so a removed source becomes
+  visible. Formatting adapts to the magnitude (e.g. "0.42 events/s",
+  "2450 events/s"). The auto-stop time limit is now also enforced on the 1 s
+  statistics tick, not only when a batch arrives.
 - Calibration panel "Auto" button now locates the photopeaks instead of
   placing the regions at fixed fractions of the data range. The 511 keV
   peak is the tallest feature of the spectrum (below half its position
@@ -67,6 +63,13 @@ All notable changes to Positron are documented here.
   when the 1275 keV peak was not found and region 2 was placed by the
   assumed 2.45 ratio. Peak finding, calibration and apply are unchanged and
   still separate steps.
+- Scope input range is now 200 mV on both series instead of 100 mV. At
+  100 mV the NaI pulse peak reached the rail near 1000 keV, so the whole
+  1275 keV photopeak clipped (92-99 % of its pulses) and the two-point
+  calibration inherited a -15 to -25 keV offset; at 200 mV nothing clips
+  (1275 keV pulses peak at 105-130 mV). Vertical resolution is 1.57 mV per
+  ADC step; the -5 mV trigger threshold and 0.2-0.4 mV baseline noise are
+  unaffected. Recalibrate after upgrading.
 
 ### Added
 - Developer diagnostic: `run_debug.bat` (env `POSITRON_DUMP_ANOMALIES=1`)
@@ -80,12 +83,12 @@ All notable changes to Positron are documented here.
   the energy/peak effective width, with an energy-vs-peak plot. Used to
   separate ADC clipping from NaI nonlinearity as the cause of the negative
   calibration offsets.
-- Developer range override: `POSITRON_RANGE_MV=200` (or 50/500;
-  `run_200mv.bat`) runs the scope at that input range instead of 100 mV.
-  Channel setup, trigger threshold and ADC-to-mV conversion all follow it;
-  the Home panel and the CSV header report the range in use. Raw energies
-  are range-independent, so the 511 keV raw centroid should not move
-  between ranges while a clipped 1275 keV centroid does.
+- Developer range override: `POSITRON_RANGE_MV=50|100|200|500` runs the
+  scope at that input range. Channel setup, trigger threshold and ADC-to-mV
+  conversion all follow it; the Home panel and the CSV header report the
+  range in use. Raw energies are range-independent, so the 511 keV raw
+  centroid should not move between ranges while a clipped 1275 keV
+  centroid does.
 
 ## [1.3.0] - 2026-09-04
 

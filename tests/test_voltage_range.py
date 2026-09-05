@@ -1,8 +1,8 @@
 """
 Tests for the input voltage range selection in positron.scope.driver.
 
-The production range is 100 mV; POSITRON_RANGE_MV overrides it for
-clipping / linearity studies. The range code must stay consistent with the
+The production range is 200 mV (100 mV clipped the 1275 keV photopeak);
+POSITRON_RANGE_MV overrides it for clipping / linearity studies. The range code must stay consistent with the
 ADC-to-mV conversion table.
 """
 
@@ -21,16 +21,16 @@ from positron.scope.acquisition import adc_to_mv
 MAX_ADC = 32512
 
 
-def test_default_is_100mv(monkeypatch):
+def test_default_is_200mv(monkeypatch):
     monkeypatch.delenv(VOLTAGE_RANGE_ENV, raising=False)
-    assert configured_voltage_range_mv() == 100
-    assert DEFAULT_VOLTAGE_RANGE_MV == 100
-    assert voltage_range_code(100) == 3
+    assert configured_voltage_range_mv() == 200
+    assert DEFAULT_VOLTAGE_RANGE_MV == 200
+    assert voltage_range_code(200) == 4
 
 
 def test_empty_env_means_default(monkeypatch):
     monkeypatch.setenv(VOLTAGE_RANGE_ENV, "  ")
-    assert configured_voltage_range_mv() == 100
+    assert configured_voltage_range_mv() == 200
 
 
 @pytest.mark.parametrize("range_mv", SUPPORTED_VOLTAGE_RANGES_MV)

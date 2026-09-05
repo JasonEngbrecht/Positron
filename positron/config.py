@@ -172,11 +172,11 @@ class ScopeConfig:
     
     # Achieved acquisition settings (read-only, set by configurator)
     # These are stored for reference but not used to configure the scope
-    # Hardware settings are hardcoded: 100mV range, 4 channels enabled, DC coupling
+    # Hardware settings are hardcoded: 200mV range, 4 channels enabled, DC coupling
     waveform_length: int = 375  # Total number of samples (calculated from sample rate and 3 µs)
     pre_trigger_samples: int = 125  # Pre-trigger sample count (calculated from sample rate and 1 µs)
     sample_rate: Optional[float] = None  # Achieved sample rate in Hz (e.g., 125000000.0 for 125 MS/s)
-    voltage_range_code: int = 3  # Series range code for 100 mV (3 on both PS3000a and PS6000)
+    voltage_range_code: int = 4  # Series range code for 200 mV (4 on both PS3000a and PS6000)
     timebase_index: int = 0  # Timebase index found by the configurator (both series)
     
     # Trigger configuration
