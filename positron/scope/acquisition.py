@@ -133,15 +133,16 @@ class BatchTimingStats:
 
 
 # ---------------------------------------------------------------------------
-# DIAGNOSTIC (temporary): raw-waveform dump of anomalous events.
+# DIAGNOSTIC: raw-waveform dump of anomalous events (developer tool).
 #
-# Investigating pulses that come out with negative energy. Set the environment
+# Added for the 2026-09 negative-energy investigation and kept because it is
+# the quickest way to see what the analysis is rejecting. Set the environment
 # variable POSITRON_DUMP_ANOMALIES=1 (see run_debug.bat) and the engine writes
 # .npz files to ~/.positron/debug/<timestamp>/ for events that were discarded
 # (dark-pulse trigger), or where any channel was rejected by the pulse
 # validity checks or has a pulse with energy < 0, plus the first few normal
 # events for pulse-shape reference. Plot them with tools/plot_anomalies.py.
-# Zero cost when the variable is unset. Remove once the investigation is done.
+# Zero cost when the variable is unset.
 # ---------------------------------------------------------------------------
 ANOMALY_DUMP_ENV = "POSITRON_DUMP_ANOMALIES"
 ANOMALY_MAX_FILES = 40       # per run
