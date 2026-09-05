@@ -2,6 +2,39 @@
 
 All notable changes to Positron are documented here.
 
+## [Unreleased]
+
+### Fixed
+- A few percent of pulses came out with negative (or near-zero) energy.
+  Cause: a pulse arriving while the scope refills the pre-trigger buffer
+  between segments (trigger disarmed) is captured with its peak in the
+  pre-trigger window, because the scope fires on noise as the pulse tail
+  recovers through the -5 mV threshold. The mean-of-pre-trigger baseline was
+  dragged down and the full-window integral went negative. The analysis now
+  takes the baseline from the pre-trigger window minus a 50 ns guard, and
+  marks a channel *rejected* (`has_pulse` FALSE, new `rejected` flag) when
+  the pre-trigger window is not quiet or the leading edge is not inside the
+  captured window. Rejected channels drop out of all histograms and the
+  calibration; the CSV export gains an `X_rejected` column per channel
+  holding the reason (`pre_trigger`, `no_edge`, `width`).
+- PMT dark pulses (single-photoelectron blips, 3-5 ns wide, ~zero area) no
+  longer pile up at zero energy in the spectra, where the calibration offset
+  made them appear at -15 to -35 keV with a detector-dependent height. A
+  pulse is now rejected (`width`) when energy / peak amplitude is below
+  30 ns; real scintillation pulses measure 240-280 ns. An event whose
+  trigger condition was satisfied only with the help of such a dark pulse is
+  discarded entirely (not stored or counted); the per-5 s acquisition log
+  line reports how many.
+- CFD crossing search now also covers the 50 ns guard interval before the
+  trigger, so pulses whose 50% point falls a sample before t = 0 get an
+  interpolated time instead of the peak-time fallback; the search is
+  vectorized (late pulses no longer cost a per-sample Python loop).
+
+### Added
+- Developer diagnostic: `run_debug.bat` (env `POSITRON_DUMP_ANOMALIES=1`)
+  writes raw waveforms of rejected / negative-energy events to
+  `~/.positron/debug/`; `tools/plot_anomalies.py` plots them.
+
 ## [1.3.0] - 2026-09-04
 
 ### Fixed

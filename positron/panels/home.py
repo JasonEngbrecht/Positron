@@ -25,6 +25,7 @@ from PySide6.QtGui import QFont
 
 from positron.app import PositronApp
 from positron.ui.waveform_plot import WaveformPlot
+from positron.processing.pulse import BASELINE_GUARD_NS, PULSE_THRESHOLD_MV, MIN_EFFECTIVE_WIDTH_NS
 from positron.scope.acquisition import AcquisitionEngine, create_acquisition_engine, WaveformBatch
 from positron.ui.trigger_dialog import show_trigger_config_dialog
 from positron.scope.trigger import create_trigger_configurator
@@ -466,6 +467,12 @@ class HomePanel(QWidget):
             pre_time_us = scope_config.pre_trigger_samples / scope_config.sample_rate * 1e6
             post_time_us = total_time_us - pre_time_us
             f.write(f"# Capture Window: {total_time_us:.3f} µs (Pre: {pre_time_us:.3f} µs, Post: {post_time_us:.3f} µs)\n")
+            f.write(f"# Pulse Validity: baseline guard {BASELINE_GUARD_NS:.0f} ns before trigger. "
+                    f"X_rejected gives the reason a channel was excluded (X_has_pulse FALSE): "
+                    f"pre_trigger = pulse in the pre-trigger window (dips > {PULSE_THRESHOLD_MV:.0f} mV), "
+                    f"no_edge = leading edge not inside the window, "
+                    f"width = energy/peak < {MIN_EFFECTIVE_WIDTH_NS:.0f} ns (PMT dark pulse). "
+                    f"Events triggered only by a dark pulse are not stored.\n")
             f.write(f"#\n")
             
             # Trigger configuration
@@ -520,12 +527,9 @@ class HomePanel(QWidget):
             writer = csv.writer(f)
             
             # Write header row
-            header = [
-                'A_has_pulse', 'A_timing_ns', 'A_energy_kev',
-                'B_has_pulse', 'B_timing_ns', 'B_energy_kev',
-                'C_has_pulse', 'C_timing_ns', 'C_energy_kev',
-                'D_has_pulse', 'D_timing_ns', 'D_energy_kev'
-            ]
+            header = []
+            for ch in ['A', 'B', 'C', 'D']:
+                header += [f'{ch}_has_pulse', f'{ch}_rejected', f'{ch}_timing_ns', f'{ch}_energy_kev']
             writer.writerow(header)
             
             # Write data rows
@@ -544,7 +548,10 @@ class HomePanel(QWidget):
                     if pulse:
                         # Has pulse flag
                         row.append('TRUE' if pulse.has_pulse else 'FALSE')
-                        
+
+                        # Reason the pulse validity checks excluded it ('' if accepted)
+                        row.append(pulse.reject_reason)
+
                         # Timing (always write the value)
                         row.append(f"{pulse.timing_ns:.6f}")
                         
@@ -559,7 +566,7 @@ class HomePanel(QWidget):
                             row.append('N/A')
                     else:
                         # No pulse data for this channel
-                        row.extend(['FALSE', '0.0', 'N/A'])
+                        row.extend(['FALSE', '', '0.0', 'N/A'])
                 
                 writer.writerow(row)
     
@@ -761,7 +768,10 @@ class HomePanel(QWidget):
             voltage_range_code=config.scope.voltage_range_code,
             max_adc=scope_info.max_adc,
             cfd_fraction=config.cfd_fraction,
-            timebase_index=config.scope.timebase_index
+            timebase_index=config.scope.timebase_index,
+            trigger_conditions=[
+                list(cond.channels) for cond in config.scope.trigger.get_valid_conditions()
+            ]
         )
         
         # Connect signals

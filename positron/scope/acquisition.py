@@ -94,15 +94,17 @@ class BatchTimingStats:
         self._window_start = now
         self._batches = 0
         self._captures = 0
+        self._discarded = 0
         self._wait = 0.0
         self._download = 0.0
         self._process = 0.0
 
     def record(self, wait_s: float, download_s: float, process_s: float,
-               captures: int) -> Optional[str]:
+               captures: int, discarded: int = 0) -> Optional[str]:
         """Record one batch. Returns a summary string when a window closes, else None."""
         self._batches += 1
         self._captures += captures
+        self._discarded += discarded
         self._wait += wait_s
         self._download += download_s
         self._process += process_s
@@ -125,7 +127,8 @@ class BatchTimingStats:
             f"per batch: wait {self._wait / n * 1e3:.1f} ms, "
             f"download {self._download / n * 1e3:.1f} ms, "
             f"process {self._process / n * 1e3:.1f} ms, "
-            f"other {other / n * 1e3:.1f} ms"
+            f"other {other / n * 1e3:.1f} ms | "
+            f"discarded {self._discarded} dark-pulse triggers"
         )
 
 
@@ -134,13 +137,13 @@ class BatchTimingStats:
 #
 # Investigating pulses that come out with negative energy. Set the environment
 # variable POSITRON_DUMP_ANOMALIES=1 (see run_debug.bat) and the engine writes
-# .npz files to ~/.positron/debug/<timestamp>/ for events where any channel
-# has a pulse with energy < 0 or CFD time < 2 ns, plus the first few normal
+# .npz files to ~/.positron/debug/<timestamp>/ for events that were discarded
+# (dark-pulse trigger), or where any channel was rejected by the pulse
+# validity checks or has a pulse with energy < 0, plus the first few normal
 # events for pulse-shape reference. Plot them with tools/plot_anomalies.py.
 # Zero cost when the variable is unset. Remove once the investigation is done.
 # ---------------------------------------------------------------------------
 ANOMALY_DUMP_ENV = "POSITRON_DUMP_ANOMALIES"
-ANOMALY_TIMING_NS = 2.0      # CFD time below this counts as anomalous
 ANOMALY_MAX_FILES = 40       # per run
 ANOMALY_NORMAL_FILES = 5     # reference events saved unconditionally
 ANOMALY_MIN_SPACING_S = 0.5  # spread saved anomalies over the run instead of
@@ -171,8 +174,10 @@ class AnomalyDumper:
 
     @staticmethod
     def is_anomalous(event: EventData) -> bool:
+        if event.discarded:
+            return True
         for pulse in event.channels.values():
-            if pulse.has_pulse and (pulse.energy < 0.0 or pulse.timing_ns < ANOMALY_TIMING_NS):
+            if pulse.rejected or (pulse.has_pulse and pulse.energy < 0.0):
                 return True
         return False
 
@@ -217,6 +222,7 @@ class AnomalyDumper:
             if j < 0 or j >= len(events):
                 continue
             data[prefix + "event_id"] = events[j].event_id
+            data[prefix + "discard_reason"] = events[j].discard_reason
             for ch, wf in waveforms[j].items():
                 pulse = events[j].channels[ch]
                 data[f"{prefix}{ch}"] = wf
@@ -224,6 +230,7 @@ class AnomalyDumper:
                 data[f"{prefix}{ch}_energy"] = pulse.energy
                 data[f"{prefix}{ch}_peak_mv"] = pulse.peak_mv
                 data[f"{prefix}{ch}_has_pulse"] = pulse.has_pulse
+                data[f"{prefix}{ch}_reject_reason"] = pulse.reject_reason
         path = self.directory / f"{kind}_{event.event_id:07d}.npz"
         np.savez(path, **data)
 
@@ -263,7 +270,8 @@ class AcquisitionEngine(QThread):
         max_adc: int,
         cfd_fraction: float = 0.5,
         timebase_index: int = 0,
-        driver: Optional[ScopeDriver] = None
+        driver: Optional[ScopeDriver] = None,
+        trigger_conditions: Optional[List[List[str]]] = None
     ):
         """
         Initialize the acquisition engine.
@@ -280,6 +288,9 @@ class AcquisitionEngine(QThread):
             cfd_fraction: Constant fraction for CFD timing (0-1)
             timebase_index: Timebase index from configurator
             driver: Scope driver to use (created from scope_info if omitted)
+            trigger_conditions: Trigger logic applied to the scope (OR of
+                AND-ed channel lists); lets the analysis discard events that
+                were triggered only by a PMT dark pulse. None disables that.
         """
         super().__init__()
 
@@ -298,6 +309,7 @@ class AcquisitionEngine(QThread):
         self.voltage_range_code = voltage_range_code
         self.max_adc = max_adc
         self.cfd_fraction = cfd_fraction
+        self.trigger_conditions = trigger_conditions
 
         # State management
         self._mutex = QMutex()
@@ -320,6 +332,7 @@ class AcquisitionEngine(QThread):
 
         # Statistics
         self.total_captures = 0
+        self.total_discarded = 0  # events triggered only by a dark pulse
         self._timing = BatchTimingStats()
 
         # Diagnostic waveform dump (off unless POSITRON_DUMP_ANOMALIES is set)
@@ -455,6 +468,8 @@ class AcquisitionEngine(QThread):
             # Process each segment in the batch
             events_to_store: List[EventData] = []
             display_waveforms: Dict[str, np.ndarray] = {}
+            n_discarded = 0
+            batch_events: List[EventData] = []                  # diagnostic dump only
             batch_waveforms: List[Dict[str, np.ndarray]] = []  # diagnostic dump only
 
             for segment_idx in range(self.batch_size):
@@ -480,15 +495,21 @@ class AcquisitionEngine(QThread):
                     timestamp=timestamp,
                     pre_trigger_samples=self.pre_trigger_samples,
                     sample_interval_ns=self.sample_interval_ns,
-                    cfd_fraction=self.cfd_fraction
+                    cfd_fraction=self.cfd_fraction,
+                    trigger_conditions=self.trigger_conditions
                 )
 
-                events_to_store.append(event_data)
+                if event_data.discarded:
+                    n_discarded += 1
+                else:
+                    events_to_store.append(event_data)
                 if self._dumper.enabled:
+                    batch_events.append(event_data)
                     batch_waveforms.append(segment_waveforms)
 
             if self._dumper.enabled:
-                self._dumper.process_batch(time_ns, batch_waveforms, events_to_store)
+                self._dumper.process_batch(time_ns, batch_waveforms, batch_events)
+            self.total_discarded += n_discarded
 
             # Store all events from this batch
             num_added = self.event_storage.add_events(events_to_store)
@@ -514,6 +535,7 @@ class AcquisitionEngine(QThread):
                 download_s=t_downloaded - t_ready,
                 process_s=time.perf_counter() - t_downloaded,
                 captures=self.batch_size,
+                discarded=n_discarded,
             )
             if summary:
                 logger.info(summary)
@@ -578,7 +600,8 @@ def create_acquisition_engine(
     voltage_range_code: int = 3,  # PS6000_100MV
     max_adc: Optional[int] = None,
     cfd_fraction: float = 0.5,
-    timebase_index: int = 0
+    timebase_index: int = 0,
+    trigger_conditions: Optional[List[List[str]]] = None
 ) -> AcquisitionEngine:
     """
     Factory function to create the appropriate acquisition engine for the scope series.
@@ -595,7 +618,9 @@ def create_acquisition_engine(
         max_adc: Maximum ADC count (uses scope_info.max_adc if None)
         cfd_fraction: Constant fraction for CFD timing (default: 0.5)
         timebase_index: Timebase index from configurator (used by both series)
-    
+        trigger_conditions: Trigger logic (OR of AND-ed channel lists) for the
+            dark-pulse event discard; None disables it
+
     Returns:
         Acquisition engine using the appropriate driver for the scope series
 
@@ -620,5 +645,6 @@ def create_acquisition_engine(
         voltage_range_code=voltage_range_code,
         max_adc=max_adc,
         cfd_fraction=cfd_fraction,
-        timebase_index=timebase_index
+        timebase_index=timebase_index,
+        trigger_conditions=trigger_conditions
     )

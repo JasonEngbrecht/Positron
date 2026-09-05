@@ -9,15 +9,17 @@ from positron.scope import acquisition
 from positron.scope.acquisition import AnomalyDumper, ANOMALY_DUMP_ENV
 
 
-def _event(event_id, energy_d=1000.0, timing_d=5.0, has_pulse_d=True):
+def _event(event_id, energy_d=1000.0, timing_d=5.0, has_pulse_d=True, reject_d='', discard=''):
     quiet = ChannelPulse(timing_ns=0.0, energy=0.0, peak_mv=0.0, has_pulse=False)
     return EventData(
         event_id=event_id,
         timestamp=0.0,
         channels={
             "A": quiet, "B": quiet, "C": quiet,
-            "D": ChannelPulse(timing_ns=timing_d, energy=energy_d, peak_mv=30.0, has_pulse=has_pulse_d),
+            "D": ChannelPulse(timing_ns=timing_d, energy=energy_d, peak_mv=30.0,
+                              has_pulse=has_pulse_d, reject_reason=reject_d),
         },
+        discard_reason=discard,
     )
 
 
@@ -34,8 +36,10 @@ def test_disabled_without_env(monkeypatch):
 
 def test_is_anomalous():
     assert AnomalyDumper.is_anomalous(_event(1, energy_d=-5.0))
-    assert AnomalyDumper.is_anomalous(_event(2, timing_d=0.8))
+    assert AnomalyDumper.is_anomalous(_event(2, has_pulse_d=False, reject_d='pre_trigger'))
+    assert AnomalyDumper.is_anomalous(_event(6, discard='dark_pulse_trigger'))
     assert not AnomalyDumper.is_anomalous(_event(3))
+    assert not AnomalyDumper.is_anomalous(_event(5, timing_d=0.8))  # fast edges are normal
     # A no-pulse channel never counts, whatever its numbers say
     assert not AnomalyDumper.is_anomalous(_event(4, energy_d=-5.0, has_pulse_d=False))
 
@@ -67,6 +71,8 @@ def test_dump_writes_anomalies_with_neighbours(monkeypatch, tmp_path):
     assert np.all(d["D"] == 1.0) and np.all(d["prev_D"] == 0.0) and np.all(d["next_D"] == 2.0)
     assert float(d["D_energy"]) == -300.0
     assert bool(d["D_has_pulse"]) is True
+    assert str(d["D_reject_reason"]) == ""
+    assert str(d["discard_reason"]) == ""
     assert int(d["pre_trigger_samples"]) == 10
     np.testing.assert_allclose(d["time_ns"], time_ns)
 

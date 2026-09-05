@@ -130,36 +130,66 @@ get_event_storage().add_event(event)  # Thread-safe
 **Purpose**: Sub-nanosecond timing resolution, eliminates amplitude walk
 
 **Method**: Digital CFD at 50% threshold
-1. Find peak amplitude after trigger: `peak_mv = min(waveform[trigger:])`
-2. Calculate threshold: `threshold = baseline + 0.5 * (peak - baseline)`
-3. Find zero-crossing: Linear interpolation between samples
-4. Return time in nanoseconds relative to trigger
+1. Baseline = mean of the pre-trigger samples, excluding a 50 ns guard
+   interval before the trigger (`BASELINE_GUARD_NS`)
+2. Find peak amplitude after trigger: `peak_mv = min(waveform[trigger:])`
+3. Calculate threshold: `threshold = baseline + 0.5 * (peak - baseline)`
+4. Find the first falling crossing between the guard start and the peak;
+   linear interpolation between samples
+5. Return time in nanoseconds relative to trigger
+
+**Pulse validity** (`analyze_pulse`): a channel is *rejected*
+(`has_pulse=False`, `reject_reason` set) when
+- `pre_trigger`: the baseline region dips more than 5 mV below the baseline.
+  A pulse arrived while the scope was refilling the pre-trigger buffer
+  between segments (trigger disarmed); the scope then fired on noise as the
+  ~1 µs tail recovered through -5 mV, so the pulse peaks in the pre-trigger
+  region. Without the check that pulse drags the baseline down and the
+  energy integral goes negative.
+- `no_edge`: no CFD threshold crossing between the guard start and the peak,
+  i.e. the leading edge is not inside the captured window.
+- `width`: energy / peak amplitude below 30 ns (`MIN_EFFECTIVE_WIDTH_NS`).
+  Single-photoelectron PMT dark pulses are 3-5 ns wide with ~zero area and
+  used to pile up at zero energy (visible as the calibration offset, -15 to
+  -35 keV); scintillation pulses here have an effective width of 240-280 ns.
+  The ratio is gain-independent, so one constant serves every detector.
+
+**Event discard** (`analyze_event`, `event_triggered_by_dark_pulse`): the
+trigger logic configured on the scope (OR of AND-ed channel lists) is
+re-evaluated using pulses whose CFD time is within 20 ns of t = 0. If the
+logic is satisfied only when width-rejected dark pulses are included, the
+event was triggered by PMT noise and the whole event is discarded (not
+stored, not counted); the acquisition engine reports the number of
+discarded events in its 5 s timing summary.
 
 **Why 50%?**
 - Industry standard for timing measurements
 - Balances noise immunity (higher %) vs time walk compensation (lower %)
 - Tested with typical PMT pulse shapes (1-2 ns rise time)
 
-**Code**: `positron/processing/pulse.py::calculate_cfd_timing()`
+**Code**: `positron/processing/pulse.py::_find_cfd_timing()`
 
 ### Energy Integration
 
 **Purpose**: Pulse energy proportional to deposited particle energy
 
-**Method**: Baseline-corrected trapezoidal integration
+**Method**: Baseline-corrected rectangular integration over the whole capture
 ```python
 energy = -sum(waveform - baseline) * sample_interval_ns
 ```
 - Negative sign: Pulses go negative (falling edge trigger)
 - Units: mV·ns (converted to keV via calibration)
-- Trapezoidal rule: `np.trapz()` for numerical integration
+- The guarded baseline (see CFD above) makes the pre-trigger contribution
+  vanish except for the leading edge inside the guard interval
 
 **Design Choice**: Full waveform integration (not gated)
 - Simple and robust
-- Pileup rejection not needed at target rates (<10 kHz)
+- Pulses in the pre-trigger window are rejected rather than corrected
+  (see Pulse validity); pile-up inside the post-trigger window is not
+  rejected at current rates
 - Future: Add integration window if needed
 
-**Code**: `positron/processing/pulse.py::calculate_energy()`
+**Code**: `positron/processing/pulse.py::_calculate_energy()`
 
 ### Energy Calibration
 
