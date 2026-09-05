@@ -5,6 +5,12 @@ All notable changes to Positron are documented here.
 ## [Unreleased]
 
 ### Fixed
+- Acquisition no longer stops with "Timeout waiting for triggers" at low
+  count rates. If a rapid-block batch has not filled within 0.5 s of arming,
+  the engine stops the scope, reads only the captures that completed
+  (`ps3000aGetNoOfCaptures` / `ps6000GetNoOfCaptures`) and re-arms; zero
+  completed captures simply re-arm. At high rates the batch fills first and
+  nothing changes. Also bounds display latency at low rates to ~0.5 s.
 - A few percent of pulses came out with negative (or near-zero) energy.
   Cause: a pulse arriving while the scope refills the pre-trigger buffer
   between segments (trigger disarmed) is captured with its peak in the

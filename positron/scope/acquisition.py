@@ -29,7 +29,14 @@ logger = logging.getLogger(__name__)
 # QThread.msleep(1) here: it rounds up to the 15.6 ms scheduler tick and
 # cost ~24 ms of dead time per batch (scope disarmed) at 600 events/s.
 POLL_INTERVAL_S = 0.0002
-TRIGGER_TIMEOUT_S = 10.0
+
+# If a batch has not filled within this many seconds of arming, stop the
+# scope and read the captures that did complete (possibly none) instead of
+# waiting for the full batch. This is what makes low count rates work: a
+# batch of 20 at 0.1 Hz would otherwise take 200 s. It also bounds display
+# latency at low rates. At high rates the batch fills first and this never
+# fires.
+PARTIAL_READ_AFTER_S = 0.5
 
 
 @dataclass
@@ -330,6 +337,7 @@ class AcquisitionEngine(QThread):
         # yet downloaded. Set by _arm(), cleared after get_values_bulk().
         self._armed = False
         self._t_armed = 0.0
+        self.partial_read_after_s = PARTIAL_READ_AFTER_S
 
         # Statistics
         self.total_captures = 0
@@ -428,6 +436,11 @@ class AcquisitionEngine(QThread):
         already in our numpy buffers, which the driver only writes during
         get_values_bulk(), so processing after re-arm is safe.
 
+        If the batch has not filled within partial_read_after_s, the scope
+        is stopped and only the completed captures are downloaded and
+        processed; zero completed captures simply re-arms. Acquisition
+        therefore never times out at low count rates.
+
         Returns:
             True if successful, False if error or stop requested
         """
@@ -436,23 +449,33 @@ class AcquisitionEngine(QThread):
                 self._arm()
             t_wait_start = time.perf_counter()
 
-            # Poll until all captures complete (with timeout)
+            # Poll until all captures complete, or the wait budget expires
+            n_captures = self.batch_size
             while not self.driver.is_ready():
                 # Check for stop request
                 with QMutexLocker(self._mutex):
                     if self._stop_requested:
                         return False
 
-                if time.perf_counter() - self._t_armed > TRIGGER_TIMEOUT_S:
-                    self.acquisition_error.emit("Timeout waiting for triggers")
-                    return False
+                if time.perf_counter() - self._t_armed > self.partial_read_after_s:
+                    # Partial batch: stop and read what completed
+                    self.driver.stop()
+                    self._armed = False
+                    n_captures = self.driver.get_no_of_captures()
+                    break
 
                 time.sleep(POLL_INTERVAL_S)
 
             t_ready = time.perf_counter()
 
-            # Retrieve data from all segments
-            self.driver.get_values_bulk(self.sample_count, self.batch_size)
+            if n_captures == 0:
+                # Nothing triggered during this arm period; re-arm and keep
+                # waiting (no data, no signals, no error).
+                self._arm()
+                return True
+
+            # Retrieve data from the completed segments
+            self.driver.get_values_bulk(self.sample_count, n_captures)
             self._armed = False
             t_downloaded = time.perf_counter()
 
@@ -473,7 +496,7 @@ class AcquisitionEngine(QThread):
             batch_events: List[EventData] = []                  # diagnostic dump only
             batch_waveforms: List[Dict[str, np.ndarray]] = []  # diagnostic dump only
 
-            for segment_idx in range(self.batch_size):
+            for segment_idx in range(n_captures):
                 # Convert ADC to mV for this segment
                 segment_waveforms = {}
                 for channel_name in self._channels.keys():
@@ -530,12 +553,12 @@ class AcquisitionEngine(QThread):
                 )
 
             # Update statistics
-            self.total_captures += self.batch_size
+            self.total_captures += n_captures
             summary = self._timing.record(
                 wait_s=t_ready - t_wait_start,
                 download_s=t_downloaded - t_ready,
                 process_s=time.perf_counter() - t_downloaded,
-                captures=self.batch_size,
+                captures=n_captures,
                 discarded=n_discarded,
             )
             if summary:
@@ -545,7 +568,7 @@ class AcquisitionEngine(QThread):
             batch = WaveformBatch(
                 time_ns=time_ns,
                 waveforms=display_waveforms,  # First segment of the batch
-                num_captures=self.batch_size,
+                num_captures=n_captures,
                 segment_index=0
             )
             self.waveform_ready.emit(batch)

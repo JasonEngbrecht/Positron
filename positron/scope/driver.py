@@ -46,6 +46,7 @@ class ScopeDriver(Protocol):
                   timebase: int) -> None: ...
     def is_ready(self) -> bool: ...
     def get_values_bulk(self, num_samples: int, num_segments: int) -> int: ...
+    def get_no_of_captures(self) -> int: ...
     def register_buffer(self, channel_idx: int, segment: int,
                         buffer_max: np.ndarray, buffer_min: np.ndarray,
                         num_samples: int) -> None: ...
@@ -277,6 +278,16 @@ class PS3000aDriver:
             assert_pico_ok(status)
         except Exception as e:
             raise RuntimeError(f"Failed to set trigger directions: {e}")
+
+    def get_no_of_captures(self) -> int:
+        """
+        Number of completed rapid-block captures. Valid after run_block
+        finished, or after stop() interrupted it (partial batch).
+        """
+        n = ctypes.c_uint32(0)
+        status = self.ps.ps3000aGetNoOfCaptures(self.handle, ctypes.byref(n))
+        assert_pico_ok(status)
+        return n.value
 
     def stop(self) -> None:
         status = self.ps.ps3000aStop(self.handle)
@@ -520,6 +531,16 @@ class PS6000Driver:
             assert_pico_ok(status)
         except Exception as e:
             raise RuntimeError(f"Failed to set trigger directions: {e}")
+
+    def get_no_of_captures(self) -> int:
+        """
+        Number of completed rapid-block captures. Valid after run_block
+        finished, or after stop() interrupted it (partial batch).
+        """
+        n = ctypes.c_uint32(0)
+        status = self.ps.ps6000GetNoOfCaptures(self.handle, ctypes.byref(n))
+        assert_pico_ok(status)
+        return n.value
 
     def stop(self) -> None:
         status = self.ps.ps6000Stop(self.handle)
