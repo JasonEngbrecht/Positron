@@ -65,6 +65,7 @@ a = Analysis(
         'positron.processing',
         'positron.processing.pulse',
         'positron.processing.events',
+        'positron.processing.rate',
         'positron.calibration',
         'positron.calibration.energy',
         'positron.panels',

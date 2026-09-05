@@ -29,6 +29,7 @@ from positron.processing.pulse import BASELINE_GUARD_NS, PULSE_THRESHOLD_MV, MIN
 from positron.scope.acquisition import AcquisitionEngine, create_acquisition_engine, WaveformBatch
 from positron.ui.trigger_dialog import show_trigger_config_dialog
 from positron.scope.trigger import create_trigger_configurator
+from positron.processing.rate import RateEstimator, format_rate
 
 
 class HomePanel(QWidget):
@@ -63,8 +64,7 @@ class HomePanel(QWidget):
         self._total_paused_time = 0.0
         
         # Rate calculation
-        self._recent_events = []
-        self._rate_window_sec = 5.0
+        self._rate = RateEstimator()
         
         # Setup UI
         self._setup_ui()
@@ -217,7 +217,7 @@ class HomePanel(QWidget):
         
         # Acquisition rate
         layout.addWidget(QLabel("Rate:"), 2, 0)
-        self.rate_label = QLabel("0.0 events/s")
+        self.rate_label = QLabel(format_rate(None))
         rate_font = QFont()
         rate_font.setPointSize(12)
         self.rate_label.setFont(rate_font)
@@ -375,7 +375,7 @@ class HomePanel(QWidget):
         self._start_time = now
         self._pause_time = now  # Set to now so pause_duration calculation = 0
         self._total_paused_time = 0.0
-        self._recent_events.clear()
+        self._rate.reset()
         
         # Update display
         self._update_statistics_display()
@@ -796,7 +796,7 @@ class HomePanel(QWidget):
         self._total_events += count
         
         # Track for rate calculation
-        self._recent_events.append((time.time(), count))
+        self._rate.add(count)
         
         # Check stop conditions
         self._check_stop_conditions()
@@ -857,8 +857,11 @@ class HomePanel(QWidget):
         self.elapsed_time_label.setText(f"{hours:02d}:{minutes:02d}:{seconds:02d}")
         
         # Acquisition rate (calculated from recent batches)
-        rate = self._calculate_rate()
-        self.rate_label.setText(f"{rate:.1f} events/s")
+        self.rate_label.setText(format_rate(self._calculate_rate()))
+
+        # Auto-stop limits are also checked per batch, but at low count
+        # rates batches are rare, so the time limit is enforced here too.
+        self._check_stop_conditions()
     
     def _get_elapsed_time(self) -> float:
         """Get total elapsed time in seconds."""
@@ -872,34 +875,15 @@ class HomePanel(QWidget):
             # Running - subtract paused time
             return time.time() - self._start_time - self._total_paused_time
     
-    def _calculate_rate(self) -> float:
-        """Calculate recent acquisition rate."""
-        # Return 0 when paused
+    def _calculate_rate(self) -> Optional[float]:
+        """
+        Recent acquisition rate in events/s, or None when paused/stopped or
+        before two batches have arrived. See RateEstimator for behavior at
+        high vs. low rates.
+        """
         if self._state != "running":
-            return 0.0
-        
-        if not self._recent_events:
-            return 0.0
-        
-        # Remove old events outside the window
-        current_time = time.time()
-        cutoff_time = current_time - self._rate_window_sec
-        self._recent_events = [
-            (t, count) for t, count in self._recent_events
-            if t >= cutoff_time
-        ]
-        
-        if not self._recent_events:
-            return 0.0
-        
-        # Calculate rate
-        total_events = sum(count for _, count in self._recent_events)
-        time_span = current_time - self._recent_events[0][0]
-        
-        if time_span > 0:
-            return total_events / time_span
-        else:
-            return 0.0
+            return None
+        return self._rate.rate()
     
     def _on_configure_trigger_clicked(self) -> None:
         """Open trigger configuration dialog."""

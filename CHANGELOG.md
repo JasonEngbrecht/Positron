@@ -36,6 +36,15 @@ All notable changes to Positron are documented here.
   interpolated time instead of the peak-time fallback; the search is
   vectorized (late pulses no longer cost a per-sample Python loop).
 
+### Changed
+- Home panel rate readout reads sensibly from ~0.01 Hz to several kHz: at
+  high rates it averages over at least 5 s of batches; at low rates it is the
+  last 10 events over the time they spanned, holding between events and
+  decaying only after ~3x the expected interval so a removed source becomes
+  visible. Formatting adapts to the magnitude (e.g. "0.42 events/s",
+  "2450 events/s"). The auto-stop time limit is now also enforced on the 1 s
+  statistics tick, not only when a batch arrives.
+
 ### Added
 - Developer diagnostic: `run_debug.bat` (env `POSITRON_DUMP_ANOMALIES=1`)
   writes raw waveforms of rejected / negative-energy events to
