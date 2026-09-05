@@ -346,10 +346,15 @@ def show_energy_display_help(parent=None):
     <h3>4. Binning Options</h3>
     <p><b>Automatic Mode (Default):</b></p>
     <ul>
-        <li>1000 bins with auto-ranging based on data</li>
+        <li>1000 bins from the lowest energy seen up to 3000 keV, shared by all
+            channels so their bins line up on screen and in the saved CSV</li>
         <li>Updates automatically as data is acquired</li>
         <li>Good for most applications</li>
     </ul>
+    <p><b>Pile-up removal:</b> an event in which any calibrated channel measures
+    more than 3000 keV is two pulses in one capture window. Such events are
+    removed as a whole (all channels) from the Energy and Timing displays; the
+    status line shows how many. The raw data and the Home panel export keep them.</p>
     <p><b>Manual Mode:</b></p>
     <ul>
         <li>Specify energy range (Min/Max in keV)</li>

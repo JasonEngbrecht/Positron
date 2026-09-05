@@ -27,7 +27,10 @@ from positron.app import PositronApp
 from positron.panels.analysis.utils import (
     extract_calibrated_energies,
     get_channel_info,
-    CHANNEL_COLORS
+    get_all_calibrations,
+    remove_pileup_events,
+    CHANNEL_COLORS,
+    MAX_EVENT_ENERGY_KEV,
 )
 
 
@@ -310,58 +313,50 @@ class EnergyDisplayPanel(QWidget):
             return
         
         events = self.app.event_storage.get_all_events()
-        
+
         # Update channel status (in case calibration changed)
         self._update_channel_status()
-        
+
+        # Remove pile-up events (any calibrated channel above MAX_EVENT_ENERGY_KEV)
+        events, pileup_removed = remove_pileup_events(events, get_all_calibrations(self.app))
+
         # Track event counts per channel
         channel_counts = {}
-        
+
         # Clear old plot items and histogram data
         for channel, plot_item_to_remove in self._plot_items.items():
             if plot_item_to_remove is not None:
                 self.plot_widget.removeItem(plot_item_to_remove)
                 self._plot_items[channel] = None
-        
         self._current_histogram_data = {}
-        
-        # Get binning parameters
-        if self._binning_mode == 'automatic':
-            num_bins = 1000
-            energy_range = None  # Auto-range
-        else:
-            num_bins = self.bins_spin.value()
-            energy_range = (self.min_energy_spin.value(), self.max_energy_spin.value())
-        
-        # Plot each enabled channel
+
+        # Extract calibrated energies for every enabled, calibrated channel
+        channel_energies = {}
         for channel in ['A', 'B', 'C', 'D']:
             if not self._channel_enabled[channel]:
                 continue
-            
-            # Get channel info
             info = get_channel_info(self.app, channel)
             if not info['calibrated']:
                 continue
-            
-            # Extract calibrated energies
-            energies = extract_calibrated_energies(
-                events,
-                channel,
-                info['calibration']
-            )
-            
-            if len(energies) == 0:
-                channel_counts[channel] = 0
-                continue
-            
+            energies = extract_calibrated_energies(events, channel, info['calibration'])
             channel_counts[channel] = len(energies)
-            
-            # Calculate histogram
-            if energy_range is None:
-                hist_range = (np.min(energies), np.max(energies))
-            else:
-                hist_range = energy_range
-            
+            if len(energies) > 0:
+                channel_energies[channel] = energies
+
+        # Binning: one range shared by all channels so their bins line up on
+        # screen and in the saved CSV. Automatic mode runs from the lowest
+        # energy seen (small pulses go slightly negative through the
+        # calibration offset) up to the pile-up cut.
+        if self._binning_mode == 'automatic':
+            num_bins = 1000
+            low = min((float(np.min(e)) for e in channel_energies.values()), default=0.0)
+            hist_range = (min(low, 0.0), MAX_EVENT_ENERGY_KEV)
+        else:
+            num_bins = self.bins_spin.value()
+            hist_range = (self.min_energy_spin.value(), self.max_energy_spin.value())
+
+        # Plot each channel
+        for channel, energies in channel_energies.items():
             counts, bin_edges = np.histogram(energies, bins=num_bins, range=hist_range)
             
             # Store histogram data for saving (bin centers and original counts)
@@ -393,10 +388,12 @@ class EnergyDisplayPanel(QWidget):
         
         # Update status label
         status_parts = [f"Total events: {event_count:,}"]
+        if pileup_removed:
+            status_parts.append(f"pile-up removed (>{MAX_EVENT_ENERGY_KEV:.0f} keV): {pileup_removed:,}")
         for channel in ['A', 'B', 'C', 'D']:
             if channel in channel_counts:
                 status_parts.append(f"Ch {channel}: {channel_counts[channel]:,}")
-        
+
         self.status_label.setText(" | ".join(status_parts))
         
         # Update save button state
@@ -441,7 +438,7 @@ class EnergyDisplayPanel(QWidget):
                 
                 # Binning information
                 if self._binning_mode == 'automatic':
-                    writer.writerow([f'# Binning: Automatic, 1000 bins'])
+                    writer.writerow([f'# Binning: Automatic, 1000 bins, up to {MAX_EVENT_ENERGY_KEV:.0f} keV (shared by all channels)'])
                 else:
                     writer.writerow([f'# Binning: Manual, {self.bins_spin.value()} bins, {self.min_energy_spin.value()}-{self.max_energy_spin.value()} keV'])
                 
@@ -475,9 +472,13 @@ class EnergyDisplayPanel(QWidget):
                 # Write headers
                 writer.writerow(headers)
                 
-                # Write data rows
-                # All channels should have the same number of bins
+                # Write data rows. All channels share one set of bins (same
+                # range and count); refuse to write misaligned columns.
                 if data_columns:
+                    first_centers = data_columns[0][0]
+                    for bin_centers, _ in data_columns[1:]:
+                        if len(bin_centers) != len(first_centers) or not np.allclose(bin_centers, first_centers):
+                            raise ValueError("Channel histograms have different bins; update the histogram and try again")
                     num_rows = len(data_columns[0][0])
                     for i in range(num_rows):
                         row = [f"{data_columns[0][0][i]:.2f}"]  # Energy from first channel

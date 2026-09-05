@@ -26,7 +26,10 @@ import pyqtgraph as pg
 from positron.app import PositronApp
 from positron.panels.analysis.utils import (
     calculate_timing_differences,
-    get_channel_info
+    get_channel_info,
+    get_all_calibrations,
+    remove_pileup_events,
+    MAX_EVENT_ENERGY_KEV,
 )
 
 
@@ -410,6 +413,9 @@ class TimingDisplayPanel(QWidget):
             return
         
         events = self.app.event_storage.get_all_events()
+
+        # Remove pile-up events (any calibrated channel above MAX_EVENT_ENERGY_KEV)
+        events, pileup_removed = remove_pileup_events(events, get_all_calibrations(self.app))
         
         # Clear histogram data
         self._current_histogram_data = {}
@@ -425,6 +431,8 @@ class TimingDisplayPanel(QWidget):
         # Update each plot
         active_plots = 0
         status_parts = [f"Total events: {event_count:,}"]
+        if pileup_removed:
+            status_parts.append(f"pile-up removed (>{MAX_EVENT_ENERGY_KEV:.0f} keV): {pileup_removed:,}")
         
         for i, plot in enumerate(self.timing_plots):
             config = plot.get_config()

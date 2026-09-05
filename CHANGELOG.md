@@ -45,6 +45,18 @@ All notable changes to Positron are documented here.
   "2450 events/s"). The auto-stop time limit is now also enforced on the 1 s
   statistics tick, not only when a batch arrives.
 
+### Fixed
+- Energy Display automatic binning gave each channel its own histogram
+  range (its lowest to highest energy), so a single pile-up event at several
+  thousand keV widened that channel's bins, made it tower over the others
+  on screen, and put its counts at the wrong energies in the saved CSV,
+  which writes one energy column for all channels. Automatic mode now uses
+  one range for all channels, from the lowest energy seen up to 3000 keV,
+  and the CSV export refuses to write misaligned channels.
+- Pile-up events (any calibrated channel above 3000 keV) are now removed
+  as a whole event from the Energy and Timing displays; the status line
+  reports how many. Raw data and the Home panel export are unchanged.
+
 ### Changed
 - Calibration panel "Auto" button now locates the photopeaks instead of
   placing the regions at fixed fractions of the data range. The 511 keV

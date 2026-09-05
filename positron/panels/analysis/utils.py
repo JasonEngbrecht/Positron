@@ -30,6 +30,52 @@ CHANNEL_NAMES = {
 }
 
 
+# Events with any calibrated channel above this energy are pile-up (two
+# pulses in one capture window) and are removed from every analysis display
+# as a whole. The Na-22 spectrum ends at 1275 keV; sum-coincidence of 511 and
+# 1275 in one crystal is 1786 keV.
+MAX_EVENT_ENERGY_KEV = 3000.0
+
+
+def get_all_calibrations(app: PositronApp) -> Dict[str, ChannelCalibration]:
+    """Calibration objects for all four channels, keyed by channel name."""
+    return {ch: app.config.scope.get_calibration(ch) for ch in ('A', 'B', 'C', 'D')}
+
+
+def remove_pileup_events(
+    events: List[EventData],
+    calibrations: Dict[str, ChannelCalibration],
+    max_kev: float = MAX_EVENT_ENERGY_KEV
+) -> Tuple[List[EventData], int]:
+    """
+    Drop every event in which any calibrated channel with a valid pulse has a
+    calibrated energy above max_kev.
+
+    Uncalibrated channels cannot be judged and are ignored. The raw data in
+    EventStorage and the Home panel CSV export are untouched.
+
+    Returns:
+        (kept events, number removed)
+    """
+    active = [(ch, cal) for ch, cal in calibrations.items() if cal.calibrated]
+    if not active:
+        return list(events), 0
+    kept = []
+    removed = 0
+    for event in events:
+        pileup = False
+        for ch, cal in active:
+            pulse = event.channels.get(ch)
+            if pulse and pulse.has_pulse and cal.apply_calibration(pulse.energy) > max_kev:
+                pileup = True
+                break
+        if pileup:
+            removed += 1
+        else:
+            kept.append(event)
+    return kept, removed
+
+
 def extract_calibrated_energies(
     events: List[EventData],
     channel: str,
