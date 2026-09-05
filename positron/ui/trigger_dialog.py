@@ -132,7 +132,8 @@ class TriggerConfigDialog(QDialog):
         info_group = QGroupBox("Hardware Settings (Fixed)")
         info_layout = QVBoxLayout()
         info_layout.addWidget(QLabel("Threshold: -5 mV"))
-        info_layout.addWidget(QLabel("Direction: Falling edge (negative pulses)"))
+        info_layout.addWidget(QLabel("Direction: Falling edge (negative pulses); "
+                                     "channels combined by AND are gated below threshold (overlap coincidence)"))
         info_layout.addWidget(QLabel("Hysteresis: 10 ADC counts"))
         info_group.setLayout(info_layout)
         layout.addWidget(info_group)

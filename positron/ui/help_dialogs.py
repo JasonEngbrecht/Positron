@@ -199,7 +199,11 @@ def show_home_help(parent=None):
     <p><b>Trigger Settings:</b> Hardware settings are pre-optimized:</p>
     <ul>
         <li>Threshold: -5 mV (for negative-going pulses)</li>
-        <li>Edge: Falling (pulse goes negative)</li>
+        <li>Direction: falling edge (pulse goes negative) for a channel used on
+            its own; for channels combined by AND the trigger is gated on the
+            signal being below threshold, so the coincidence fires when the two
+            pulses overlap in time rather than only when their edges coincide
+            exactly</li>
         <li>Hysteresis: 10 ADC counts (noise rejection)</li>
     </ul>
     <p><i>Note: You can reconfigure triggers while paused without losing acquired data.</i></p>

@@ -6,7 +6,9 @@ for pulse detection experiments.
 
 Hardware Configuration (FIXED):
 - Threshold: -5 mV
-- Direction: Falling edge (negative pulses)
+- Direction: falling edge (negative pulses) for channels used on their own;
+  gated BELOW for channels combined by AND (coincidence) - see
+  classify_trigger_directions for why
 - Hysteresis: 10 ADC counts (minimal)
 
 User Configuration:
@@ -18,7 +20,7 @@ Series-specific SDK calls and trigger structs live in positron.scope.driver;
 this module contains only the shared orchestration logic.
 """
 
-from typing import List, Optional
+from typing import List, Optional, Tuple
 from dataclasses import dataclass
 
 from positron.scope.connection import ScopeInfo
@@ -40,6 +42,40 @@ class AppliedTriggerInfo:
     auto_trigger_ms: int
     threshold_mv: float
     direction: str
+
+
+def classify_trigger_directions(conditions: List[TriggerCondition]) -> Tuple[List[str], List[str]]:
+    """
+    Decide which participating channels use an edge direction and which a
+    gated (level) direction.
+
+    PicoScope RISING/FALLING are "threshold" triggers: the channel's condition
+    is true only at the instant of the crossing. ABOVE/BELOW are "gated"
+    triggers: true for as long as the signal is on that side of the
+    threshold. A logical AND of two FALLING conditions therefore fires only
+    when both channels cross at the same instant; two coincident scintillator
+    pulses cross a few ns apart, so real coincidences mostly failed to fire
+    at their leading edges and the scope fired later on noise as both tails
+    recovered through the threshold (measured 2026-09-04: ~40 % of A AND D
+    events had both pulses in the pre-trigger window and nothing at t = 0,
+    and the coincidences that did fire were biased towards amplitude pairs
+    whose crossings happened to line up). With BELOW on both channels the
+    AND is an overlap coincidence of the pulses' time below threshold
+    (~150-300 ns) and fires at the later leading edge.
+
+    Rule: a channel that appears in any condition with two or more channels
+    is gated (BELOW); every other participating channel is FALLING.
+
+    Returns:
+        (falling_channels, gated_channels), both sorted
+    """
+    gated = set()
+    all_channels = set()
+    for condition in conditions:
+        all_channels.update(condition.channels)
+        if len(condition.channels) >= 2:
+            gated.update(condition.channels)
+    return sorted(all_channels - gated), sorted(gated)
 
 
 class TriggerConfigurator:
@@ -68,7 +104,8 @@ class TriggerConfigurator:
         Sets up:
         1. Trigger properties (threshold, hysteresis) for each participating channel
         2. Trigger conditions (AND/OR logic) using multiple condition structs
-        3. Trigger directions (falling edge for all participating channels)
+        3. Trigger directions (falling edge for single-channel conditions,
+           gated BELOW for channels inside AND conditions)
 
         Args:
             trigger_config: User-configured trigger settings
@@ -100,8 +137,10 @@ class TriggerConfigurator:
             [condition.channels for condition in valid_conditions]
         )
 
-        # Step 3: Set trigger directions (falling edge)
-        self.driver.set_trigger_directions(participating_channels)
+        # Step 3: Set trigger directions (falling edge, or gated BELOW for
+        # channels combined by AND)
+        gated_channels = classify_trigger_directions(valid_conditions)[1]
+        self.driver.set_trigger_directions(participating_channels, gated_channels)
 
         # Create summary
         conditions_summary = []
@@ -114,7 +153,8 @@ class TriggerConfigurator:
             conditions_summary=conditions_summary,
             auto_trigger_ms=auto_trigger_ms,
             threshold_mv=TRIGGER_THRESHOLD_MV,
-            direction="Falling"
+            direction="Falling" if not gated_channels else
+                      f"Falling; gated Below on {', '.join(gated_channels)} (AND)"
         )
 
     def _get_participating_channels(self, conditions: List[TriggerCondition]) -> List[str]:

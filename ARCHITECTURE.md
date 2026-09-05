@@ -354,7 +354,15 @@ positron/
   PS6000, external terminators on the PS3000a).
 - Coupling: DC (standard for PMT signals)
 - Capture window: 3 µs (1 µs pre, 2 µs post) - sufficient for typical pulse widths
-- Trigger: -5 mV threshold, falling edge (negative pulses)
+- Trigger: -5 mV threshold. Channels used on their own trigger on the
+  falling edge; channels combined by AND use the gated BELOW direction, so
+  the AND is an overlap coincidence of the pulses' time below threshold
+  (~150-300 ns) firing at the later leading edge. An AND of two FALLING
+  edges only fires when both crossings land in the same instant, which real
+  coincidences rarely do: measured 2026-09-04, ~40 % of "A AND D" events
+  fired late on tail noise with both pulses in the pre-trigger window, and
+  the rest were biased towards amplitude pairs whose crossings lined up
+  (see `classify_trigger_directions` in `positron/scope/trigger.py`).
 
 **User-Configurable**:
 - Trigger logic (OR/AND combinations of channels)

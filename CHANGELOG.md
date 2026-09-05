@@ -5,6 +5,18 @@ All notable changes to Positron are documented here.
 ## [Unreleased]
 
 ### Fixed
+- AND trigger conditions (coincidences such as "A AND D") now use the
+  PicoScope gated BELOW direction for the channels involved instead of the
+  FALLING edge. An AND of two falling edges only fires when both crossings
+  land in the same instant, which coincident pulses rarely do: ~40 % of
+  "A AND D" events fired late on tail noise (both pulses in the pre-trigger
+  window, nothing at the trigger, rejected), only ~24 % of true A-D
+  coincidences were captured against ~80 % for B-C, and the captured ones
+  were biased towards amplitude pairs whose crossings lined up, so partner
+  spectra differed (D 66 % below 400 keV against A 44 % at 511 keV). With
+  BELOW the AND is an overlap coincidence of the pulses' time below
+  threshold and fires at the later leading edge. Single-channel conditions
+  still trigger on the falling edge.
 - Acquisition no longer stops with "Timeout waiting for triggers" at low
   count rates. If a rapid-block batch has not filled within 0.5 s of arming,
   the engine stops the scope, reads only the captures that completed

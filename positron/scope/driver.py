@@ -18,7 +18,7 @@ values differ for real (see docs/picosdk-python-wrappers-master/picosdk/).
 
 import ctypes
 import os
-from typing import List, Optional, Protocol, Tuple
+from typing import List, Optional, Protocol, Sequence, Tuple
 
 import numpy as np
 
@@ -95,7 +95,8 @@ class ScopeDriver(Protocol):
     def set_trigger_properties(self, channels: List[str], threshold_mv: float,
                                hysteresis: int, auto_trigger_ms: int) -> None: ...
     def set_trigger_conditions(self, condition_channel_lists: List[List[str]]) -> None: ...
-    def set_trigger_directions(self, channels: List[str]) -> None: ...
+    def set_trigger_directions(self, channels: List[str],
+                               gated_channels: Sequence[str] = ()) -> None: ...
     def stop(self) -> None: ...
     def close(self) -> None: ...
 
@@ -301,12 +302,19 @@ class PS3000aDriver:
         except Exception as e:
             raise RuntimeError(f"Failed to set trigger conditions: {e}")
 
-    def set_trigger_directions(self, channels: List[str]) -> None:
-        """Set falling-edge direction for participating channels, NONE elsewhere."""
+    def set_trigger_directions(self, channels: List[str],
+                               gated_channels: Sequence[str] = ()) -> None:
+        """
+        Set trigger directions: falling edge for participating channels,
+        gated BELOW for those in gated_channels (channels combined by AND, see
+        positron.scope.trigger), NONE elsewhere.
+        """
         none_dir = self.ps.PS3000A_THRESHOLD_DIRECTION["PS3000A_NONE"]
         falling = self.ps.PS3000A_THRESHOLD_DIRECTION["PS3000A_FALLING"]
+        below = self.ps.PS3000A_THRESHOLD_DIRECTION["PS3000A_BELOW"]
 
-        directions = {name: (falling if name in channels else none_dir)
+        directions = {name: (below if name in gated_channels else
+                             falling if name in channels else none_dir)
                       for name in ('A', 'B', 'C', 'D')}
 
         # Note: External must be set to a valid direction (not NONE) even if not used
@@ -553,15 +561,23 @@ class PS6000Driver:
         except Exception as e:
             raise RuntimeError(f"Failed to set trigger conditions: {e}")
 
-    def set_trigger_directions(self, channels: List[str]) -> None:
-        """Set falling-edge direction for participating channels, NONE elsewhere."""
-        # PS6000_THRESHOLD_DIRECTION literals: NONE = 2 (alias of RISING),
-        # FALLING = 3. These are the PS6000's own values - do not share with
-        # the PS3000a enum, whose NONE differs.
+    def set_trigger_directions(self, channels: List[str],
+                               gated_channels: Sequence[str] = ()) -> None:
+        """
+        Set trigger directions: falling edge for participating channels,
+        gated BELOW for those in gated_channels (channels combined by AND, see
+        positron.scope.trigger), NONE elsewhere.
+        """
+        # PS6000_THRESHOLD_DIRECTION literals: BELOW = 1 (gated), NONE = 2
+        # (alias of RISING), FALLING = 3. These are the PS6000's own values
+        # (docs/picosdk-python-wrappers-master/picosdk/ps6000.py) - do not
+        # share with the PS3000a enum, whose NONE differs.
+        below = 1
         none_dir = 2
         falling = 3
 
-        directions = {name: (falling if name in channels else none_dir)
+        directions = {name: (below if name in gated_channels else
+                             falling if name in channels else none_dir)
                       for name in ('A', 'B', 'C', 'D')}
 
         status = self.ps.ps6000SetTriggerChannelDirections(
