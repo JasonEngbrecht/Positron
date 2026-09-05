@@ -13,6 +13,8 @@ import pyqtgraph as pg
 from PySide6.QtCore import Signal
 from PySide6.QtGui import QColor
 
+from positron.calibration.energy import locate_na22_peaks, AutoRegions
+
 
 class HistogramPlot(pg.PlotWidget):
     """
@@ -259,36 +261,25 @@ class HistogramPlot(pg.PlotWidget):
         """
         return tuple(self._region_2.getRegion())
     
-    def auto_position_regions(self, data: np.ndarray) -> None:
+    def auto_position_regions(self, data: np.ndarray) -> AutoRegions:
         """
-        Automatically position regions based on data distribution.
-        
-        This is a simple heuristic that places regions around
-        likely peak locations. Users can adjust manually.
-        
+        Position the regions around the 511 and 1275 keV photopeaks found in
+        the data (see positron.calibration.energy.locate_na22_peaks). Users
+        can adjust the regions afterwards.
+
         Args:
-            data: Energy values to analyze
+            data: Raw energy values to analyze
+
+        Returns:
+            The located peaks and the regions that were set
+
+        Raises:
+            CalibrationError: If the peaks cannot be located
         """
-        if len(data) == 0:
-            return
-        
-        # Get data range
-        min_energy = np.min(data)
-        max_energy = np.max(data)
-        energy_range = max_energy - min_energy
-        
-        if energy_range < 0.01:
-            return  # Data too narrow
-        
-        # Position region 1 at lower 1/3 of range
-        r1_center = min_energy + energy_range * 0.33
-        r1_width = energy_range * 0.15
-        self.set_region_1(r1_center - r1_width/2, r1_center + r1_width/2)
-        
-        # Position region 2 at upper 2/3 of range
-        r2_center = min_energy + energy_range * 0.67
-        r2_width = energy_range * 0.15
-        self.set_region_2(r2_center - r2_width/2, r2_center + r2_width/2)
+        result = locate_na22_peaks(data)
+        self.set_region_1(*result.region_1)
+        self.set_region_2(*result.region_2)
+        return result
     
     def _on_region_1_changed(self) -> None:
         """Handle region 1 boundary changes."""

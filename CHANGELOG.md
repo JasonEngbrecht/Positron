@@ -45,6 +45,17 @@ All notable changes to Positron are documented here.
   "2450 events/s"). The auto-stop time limit is now also enforced on the 1 s
   statistics tick, not only when a batch arrives.
 
+### Changed
+- Calibration panel "Auto" button now locates the photopeaks instead of
+  placing the regions at fixed fractions of the data range. The 511 keV
+  peak is the tallest feature of the spectrum (below half its position
+  excluded), the 1275 keV peak the tallest local maximum at 2.2-2.7 times
+  the 511 position; each region is the peak +- 2.5 sigma with sigma from the
+  measured FWHM. The status box reports the positions and widths, and warns
+  when the 1275 keV peak was not found and region 2 was placed by the
+  assumed 2.45 ratio. Peak finding, calibration and apply are unchanged and
+  still separate steps.
+
 ### Added
 - Developer diagnostic: `run_debug.bat` (env `POSITRON_DUMP_ANOMALIES=1`)
   writes raw waveforms of rejected / negative-energy events to

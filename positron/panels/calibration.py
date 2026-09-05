@@ -438,13 +438,29 @@ class CalibrationPanel(QWidget):
             QMessageBox.warning(self, "No Data", f"No histogram data for channel {channel}.")
             return
         
-        histogram.auto_position_regions(data)
-        
+        try:
+            result = histogram.auto_position_regions(data)
+        except CalibrationError as e:
+            QMessageBox.warning(self, "Auto-Position Failed", str(e))
+            return
+
         status_text = self._get_channel_widget(channel, f"status_text_{channel}")
         if status_text:
-            status_text.setPlainText(
-                f"Regions auto-positioned for channel {channel}. Adjust as needed, then find peaks."
-            )
+            fwhm_1 = 2.355 * result.sigma_1 / result.peak_1 * 100
+            lines = [
+                f"Regions auto-positioned for channel {channel}:",
+                f"  {PEAK_1_KEV:.0f} keV peak near {result.peak_1:.0f} mV·ns (FWHM {fwhm_1:.1f}%)",
+            ]
+            if result.peak_2_found:
+                fwhm_2 = 2.355 * result.sigma_2 / result.peak_2 * 100
+                lines.append(f"  {PEAK_2_KEV:.0f} keV peak near {result.peak_2:.0f} mV·ns (FWHM {fwhm_2:.1f}%)")
+            else:
+                lines.append(
+                    f"  {PEAK_2_KEV:.0f} keV peak NOT found - region 2 placed at "
+                    f"{result.peak_2:.0f} mV·ns by assumption; check it or collect more data"
+                )
+            lines.append("Adjust as needed, then find peaks.")
+            status_text.setPlainText("\n".join(lines))
     
     
     def _find_peaks(self, channel: str) -> None:

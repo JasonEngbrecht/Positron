@@ -13,6 +13,7 @@ Where:
     offset = E1_keV - gain * E1_raw
 """
 
+from dataclasses import dataclass
 from typing import Tuple, Optional
 import numpy as np
 
@@ -20,6 +21,169 @@ import numpy as np
 # Na-22 calibration peak energies (keV)
 PEAK_1_KEV = 511.0   # Positron annihilation
 PEAK_2_KEV = 1275.0  # Na-22 gamma
+
+# Auto-positioning of the calibration regions (locate_na22_peaks).
+# The raw 1275/511 peak ratio measured on the lab's NaI detectors is
+# 2.42-2.50 (a linear detector would give 2.495); the 1062 keV Compton edge
+# sits near 2.1, so the search window below excludes it.
+AUTO_PEAK_RATIO_MIN = 2.2
+AUTO_PEAK_RATIO_MAX = 2.7
+AUTO_PEAK_RATIO_FALLBACK = 2.45   # used when no 1275 keV peak is found
+AUTO_REGION_HALF_WIDTH_SIGMA = 2.5
+AUTO_NUM_BINS = 300
+AUTO_MIN_EVENTS = 200
+AUTO_UPPER_PERCENTILE = 99.5      # coarse-pass axis top: keeps pile-up from stretching it
+AUTO_AXIS_FACTOR = 3.2            # fine-pass axis top as a multiple of the 511 keV candidate
+AUTO_LOW_CUT_RATIO = 0.5          # ignore below this fraction of the candidate (noise, backscatter)
+AUTO_MIN_PEAK_COUNTS = 2.0        # smoothed counts a 1275 keV local maximum must reach
+AUTO_FALLBACK_RESOLUTION = 0.08   # FWHM / peak at 511 keV assumed when the width cannot be measured
+AUTO_SIGMA_CLAMP = (0.5, 2.0)     # measured sigma is kept within this factor of the assumed one
+_FWHM_TO_SIGMA = 1.0 / 2.3548
+
+
+@dataclass
+class AutoRegions:
+    """Result of locate_na22_peaks: peak estimates and the regions built from them."""
+    peak_1: float            # 511 keV peak position (raw mV·ns)
+    sigma_1: float
+    peak_2: float            # 1275 keV peak position (raw mV·ns)
+    sigma_2: float
+    peak_2_found: bool       # False when peak_2 is the ratio-based fallback
+    region_1: Tuple[float, float]
+    region_2: Tuple[float, float]
+
+
+def _peak_sigma(smooth: np.ndarray, centers: np.ndarray, idx: int) -> Optional[float]:
+    """
+    Sigma of the peak at bin idx from its full width at half maximum, walking
+    down each side with linear interpolation. None if either side never drops
+    to half maximum inside the histogram.
+    """
+    half = 0.5 * smooth[idx]
+
+    def cross(step: int) -> Optional[float]:
+        i = idx
+        while 0 <= i + step < len(smooth):
+            j = i + step
+            if smooth[j] <= half:
+                frac = (smooth[i] - half) / (smooth[i] - smooth[j]) if smooth[i] != smooth[j] else 0.0
+                return centers[i] + frac * (centers[j] - centers[i])
+            i = j
+        return None
+
+    left, right = cross(-1), cross(+1)
+    if left is None or right is None:
+        return None
+    return (right - left) * _FWHM_TO_SIGMA
+
+
+def _clamped_sigma(measured: Optional[float], peak: float, kev: float) -> float:
+    """
+    Keep a measured peak sigma within AUTO_SIGMA_CLAMP of the value expected
+    from AUTO_FALLBACK_RESOLUTION (FWHM/peak at 511 keV, scaling as
+    1/sqrt(E)); use the expected value when none was measured. Protects the
+    region width against noisy histograms at low statistics.
+    """
+    expected = AUTO_FALLBACK_RESOLUTION * np.sqrt(PEAK_1_KEV / kev) * peak * _FWHM_TO_SIGMA
+    if measured is None or measured <= 0:
+        return float(expected)
+    lo, hi = AUTO_SIGMA_CLAMP
+    return float(min(max(measured, lo * expected), hi * expected))
+
+
+def locate_na22_peaks(
+    energies: np.ndarray,
+    num_bins: int = AUTO_NUM_BINS,
+    half_width_sigma: float = AUTO_REGION_HALF_WIDTH_SIGMA,
+) -> AutoRegions:
+    """
+    Locate the 511 and 1275 keV photopeaks in a raw Na-22 spectrum and build
+    a calibration region around each (peak +- half_width_sigma * sigma).
+
+    The 511 keV photopeak is the tallest feature of a Na-22 spectrum once the
+    lowest part of the axis (noise, backscatter hump) is excluded. The
+    1275 keV peak is the tallest local maximum between AUTO_PEAK_RATIO_MIN and
+    AUTO_PEAK_RATIO_MAX times the 511 position; if none is found the region
+    is placed at AUTO_PEAK_RATIO_FALLBACK times the 511 position with a width
+    scaled from the 511 peak (resolution ~ 1/sqrt(E)) and peak_2_found is
+    False so the caller can warn.
+
+    Args:
+        energies: Raw energies (mV·ns) of accepted pulses
+        num_bins: Histogram bins (fine pass covers 0 .. 3.2 x the 511 keV peak)
+        half_width_sigma: Region half-width in units of the peak sigma
+
+    Returns:
+        AutoRegions
+
+    Raises:
+        CalibrationError: Too few events, or no 511 keV peak could be located
+    """
+    energies = np.asarray(energies, dtype=float)
+    energies = energies[np.isfinite(energies) & (energies > 0)]
+    if len(energies) < AUTO_MIN_EVENTS:
+        raise CalibrationError(
+            f"Need at least {AUTO_MIN_EVENTS} pulses to locate the peaks (have {len(energies)})"
+        )
+
+    # Pass 1 (coarse): tallest bin of the whole spectrum is the 511 keV
+    # photopeak candidate. The axis top is a high percentile so pile-up
+    # cannot stretch it, and the first bins (trigger-threshold edge) are skipped.
+    upper = float(np.percentile(energies, AUTO_UPPER_PERCENTILE))
+    if upper <= 0:
+        raise CalibrationError("Energy data has no positive range")
+    coarse, edges = np.histogram(energies, bins=num_bins, range=(0.0, upper))
+    coarse_centers = 0.5 * (edges[:-1] + edges[1:])
+    coarse_smooth = np.convolve(coarse.astype(float), np.ones(5) / 5.0, mode="same")
+    skip = 3
+    candidate = float(coarse_centers[skip + int(np.argmax(coarse_smooth[skip:]))])
+    if candidate <= 0 or coarse_smooth[skip:].max() <= 0:
+        raise CalibrationError("No 511 keV peak found in the spectrum")
+
+    # Pass 2 (fine): axis 0 .. AUTO_AXIS_FACTOR x candidate so the bin width
+    # is a fixed fraction of the peak position regardless of pile-up.
+    top = AUTO_AXIS_FACTOR * candidate
+    hist, edges = np.histogram(energies, bins=num_bins, range=(0.0, top))
+    centers = 0.5 * (edges[:-1] + edges[1:])
+    smooth = np.convolve(hist.astype(float), np.ones(5) / 5.0, mode="same")
+
+    # 511 keV: tallest bin above AUTO_LOW_CUT_RATIO x candidate (skips the
+    # noise edge and the backscatter hump)
+    low_cut = int(np.searchsorted(centers, AUTO_LOW_CUT_RATIO * candidate))
+    idx_1 = low_cut + int(np.argmax(smooth[low_cut:]))
+    if smooth[idx_1] <= 0:
+        raise CalibrationError("No 511 keV peak found in the spectrum")
+    peak_1 = float(centers[idx_1])
+    sigma_1 = _clamped_sigma(_peak_sigma(smooth, centers, idx_1), peak_1, PEAK_1_KEV)
+
+    # 1275 keV: tallest local maximum inside the ratio window
+    lo_idx = int(np.searchsorted(centers, AUTO_PEAK_RATIO_MIN * peak_1))
+    hi_idx = min(int(np.searchsorted(centers, AUTO_PEAK_RATIO_MAX * peak_1)), len(smooth) - 1)
+    peak_2_found = False
+    peak_2 = sigma_2 = None
+    if hi_idx - lo_idx >= 5:
+        window = smooth[lo_idx:hi_idx]
+        idx_2 = lo_idx + int(np.argmax(window))
+        interior = lo_idx < idx_2 < hi_idx - 1
+        is_local_max = interior and smooth[idx_2] >= smooth[idx_2 - 1] and smooth[idx_2] >= smooth[idx_2 + 1]
+        if is_local_max and smooth[idx_2] >= AUTO_MIN_PEAK_COUNTS:
+            sigma_2 = _peak_sigma(smooth, centers, idx_2)
+            if sigma_2 is not None and sigma_2 > 0:
+                peak_2 = float(centers[idx_2])
+                sigma_2 = _clamped_sigma(sigma_2, peak_2, PEAK_2_KEV)
+                peak_2_found = True
+    if not peak_2_found:
+        peak_2 = AUTO_PEAK_RATIO_FALLBACK * peak_1
+        # Relative resolution scales as 1/sqrt(E)
+        sigma_2 = sigma_1 * AUTO_PEAK_RATIO_FALLBACK * np.sqrt(PEAK_1_KEV / PEAK_2_KEV)
+
+    return AutoRegions(
+        peak_1=peak_1, sigma_1=float(sigma_1),
+        peak_2=float(peak_2), sigma_2=float(sigma_2),
+        peak_2_found=peak_2_found,
+        region_1=(peak_1 - half_width_sigma * sigma_1, peak_1 + half_width_sigma * sigma_1),
+        region_2=(peak_2 - half_width_sigma * sigma_2, peak_2 + half_width_sigma * sigma_2),
+    )
 
 
 class CalibrationError(Exception):

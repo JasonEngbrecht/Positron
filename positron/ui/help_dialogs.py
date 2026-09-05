@@ -630,7 +630,15 @@ def show_calibration_help(parent=None):
         <li><b>Drag center:</b> Move entire region</li>
     </ul>
     <p>Position regions over the peaks you want to use for calibration.</p>
-    
+    <p><b>Auto Button:</b> Finds the 511 keV photopeak (the tallest peak in the
+    spectrum) and the 1275 keV photopeak (the tallest peak at 2.2-2.7 times the
+    511 keV position) and places each region at the peak &plusmn; 2.5 sigma, with
+    sigma measured from the peak's full width at half maximum. The status box
+    reports the positions and widths found. If the 1275 keV peak cannot be found
+    (too few events), region 2 is placed at 2.45 times the 511 keV position and
+    the status box says so - check it before finding peaks. Always look at the
+    regions before continuing; they can be dragged like any other time.</p>
+
     <h3>4. Find Peaks Button</h3>
     <p>Automatically determines peak centers within selected regions:</p>
     <ul>
